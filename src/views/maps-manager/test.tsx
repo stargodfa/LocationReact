@@ -14,7 +14,6 @@ import { getServiceSync } from "@spring4js/container-browser";
 import IBluetoothDataService, { IData } from "../../service-api/IBluetoothDataService";
 import IBeaconPositionService from "../../service-api/IBeaconPositionService";
 import IMapService from "../../service-api/IMapService";
-import IMapConfigService from "../../service-api/IMapConfigService";
 import EService from "../../service-config/EService";
 
 const bluetoothDataService =
@@ -23,13 +22,12 @@ const beaconPositionService =
     getServiceSync<IBeaconPositionService>(EService.IBeaconPositionService);
 const mapService =
     getServiceSync<IMapService>(EService.IMapService);
-const mapConfigService =
-    getServiceSync<IMapConfigService>(EService.IMapConfigService);
 
 const { Title, Text } = Typography;
 const { Option } = Select;
 
 const HTTP_BASE = `http://${location.hostname}:8082`;
+const METER_TO_PIXEL = 20;
 
 /* ================= 类型 ================= */
 
@@ -60,52 +58,53 @@ const MapsManager: React.FC = () => {
     const [y, setY] = useState("");
     const [anchorList, setAnchorList] = useState<AnchorItem[]>([]);
     const [beaconMacList, setBeaconMacList] = useState<string[]>([]);
-    const [showMac, setShowMac] = useState(true); // ★ 新增
 
     /* -------- 地图渲染 -------- */
     const imgRef = useRef<HTMLImageElement>(null);
     const wrapRef = useRef<HTMLDivElement>(null);
 
-    const [meterToPixel, setMeterToPixel] = useState<number>(300);
     const [scale, setScale] = useState({ sx: 1, sy: 1 });
     const [offset, setOffset] = useState({ left: 0, top: 0 });
     const [renderSize, setRenderSize] = useState({ width: 0, height: 0 });
 
-    /* ================= 地图列表 ================= */
+    /* =====================================================
+       地图列表：只从 MapService 订阅（不发 WS、不 mock）
+       ===================================================== */
     useEffect(() => {
+        // 立即取一次已有缓存（App.tsx 可能已拉到）
         setMapList(mapService.getState().maps);
+
         const unsub = mapService.subscribe((maps) => {
             setMapList(maps);
             if (!selectedMapId && maps.length > 0) {
                 setSelectedMapId(maps[0].id);
             }
         });
+
         return unsub;
     }, []);
 
-    /* ================= 比例同步 ================= */
-    useEffect(() => {
-        setMeterToPixel(mapConfigService.getState().meterToPixel);
-        return mapConfigService.subscribe((s) =>
-            setMeterToPixel(s.meterToPixel)
-        );
-    }, []);
-
-    /* ================= 切换地图 ================= */
+    /* =====================================================
+       选中地图 → 切换图片（纯前端行为）
+       ===================================================== */
     useEffect(() => {
         if (!selectedMapId) {
             setMapSrc("");
             return;
         }
+
         const map = mapList.find((m) => m.id === selectedMapId);
         if (!map) {
             setMapSrc("");
             return;
         }
+
         setMapSrc(HTTP_BASE + map.url);
     }, [selectedMapId, mapList]);
 
-    /* ================= 图片布局 ================= */
+    /* =====================================================
+       图片加载 / 窗口变化：只负责布局计算
+       ===================================================== */
     const computeImageLayout = () => {
         const img = imgRef.current;
         const wrap = wrapRef.current;
@@ -122,8 +121,11 @@ const MapsManager: React.FC = () => {
 
         let rw = cw;
         let rh = ch;
-        if (imgRatio > wrapRatio) rh = rw / imgRatio;
-        else rw = rh * imgRatio;
+        if (imgRatio > wrapRatio) {
+            rh = rw / imgRatio;
+        } else {
+            rw = rh * imgRatio;
+        }
 
         setScale({ sx: rw / iw, sy: rh / ih });
         setOffset({ left: (cw - rw) / 2, top: (ch - rh) / 2 });
@@ -135,7 +137,9 @@ const MapsManager: React.FC = () => {
         return () => window.removeEventListener("resize", computeImageLayout);
     }, []);
 
-    /* ================= Anchor 同步 ================= */
+    /* =====================================================
+       Anchor 同步（原逻辑不动）
+       ===================================================== */
     useEffect(() => {
         setAnchorList(Object.values(beaconPositionService.getState().anchors));
         return beaconPositionService.subscribe((s) =>
@@ -143,7 +147,9 @@ const MapsManager: React.FC = () => {
         );
     }, []);
 
-    /* ================= BLE MAC 列表 ================= */
+    /* =====================================================
+       BLE MAC 列表（原逻辑不动）
+       ===================================================== */
     useEffect(() => {
         const cache = new Map<string, number>();
         const TIMEOUT = 30000;
@@ -178,7 +184,9 @@ const MapsManager: React.FC = () => {
         };
     }, []);
 
-    /* ================= 坐标操作 ================= */
+    /* =====================================================
+       坐标操作（原逻辑不动）
+       ===================================================== */
     const handleSendCoord = () => {
         const nx = Number(x);
         const ny = Number(y);
@@ -194,14 +202,6 @@ const MapsManager: React.FC = () => {
         beaconPositionService.clearAll();
     };
 
-    const handleImportDefaultAnchors = () => {
-        beaconPositionService.setDefaultCoords();
-    };
-
-    const handleUseRecordAnchors = () => {
-        beaconPositionService.getAllCoords();
-    };
-
     /* ================= 渲染 ================= */
     return (
         <div style={{ padding: "0 16px 16px" }}>
@@ -215,8 +215,13 @@ const MapsManager: React.FC = () => {
                             value={selectedMapId}
                             onChange={setSelectedMapId}
                             disabled={mapList.length === 0}
-                            placeholder="请选择地图"
-                            style={{ width: "100%" }}
+                            placeholder={
+                                mapList.length === 0
+                                    ? "服务器暂无地图"
+                                    : "请选择地图"
+                            }
+                            style={{ width: "100%", minWidth: 220 }}
+                            dropdownMatchSelectWidth={false}
                         >
                             {mapList.map((m) => (
                                 <Option key={m.id} value={m.id}>
@@ -226,58 +231,44 @@ const MapsManager: React.FC = () => {
                         </Select>
                     </Card>
 
-                    <Card title="地图比例设置" size="small" style={{ marginBottom: 16 }}>
-                        <Space direction="vertical" style={{ width: "100%" }}>
-                            <Text>1 米 = 像素</Text>
-                            <Input
-                                type="number"
-                                value={meterToPixel}
-                                onChange={(e) =>
-                                    setMeterToPixel(Number(e.target.value))
-                                }
-                                onBlur={() =>
-                                    mapConfigService.setMeterToPixel(meterToPixel)
-                                }
-                            />
-                        </Space>
-                    </Card>
-
                     <Card title="Beacon 坐标设定" size="small">
                         <Space direction="vertical" style={{ width: "100%" }}>
-                            {/* ★ Beacon 选择 + MAC 显示按钮 */}
-                            <Space style={{ width: "100%" }}>
-                                <Select
-                                    value={selectedMac || undefined}
-                                    onChange={setSelectedMac}
-                                    placeholder="选择 Beacon"
-                                    disabled={beaconMacList.length === 0}
-                                    style={{ flex: 1 }}
-                                >
-                                    {beaconMacList.map((mac) => (
-                                        <Option key={mac} value={mac}>
-                                            {mac}
-                                        </Option>
-                                    ))}
-                                </Select>
+                            <Select
+                                value={selectedMac || undefined}
+                                onChange={setSelectedMac}
+                                placeholder="选择 Beacon"
+                                disabled={beaconMacList.length === 0}
+                            >
+                                {beaconMacList.map((mac) => (
+                                    <Option key={mac} value={mac}>
+                                        {mac}
+                                    </Option>
+                                ))}
+                            </Select>
 
-                                <Button onClick={() => setShowMac((v) => !v)}>
-                                    {showMac ? "隐藏 MAC" : "显示 MAC"}
+                            <Input
+                                value={x}
+                                onChange={(e) => setX(e.target.value)}
+                                placeholder="X (m)"
+                            />
+                            <Input
+                                value={y}
+                                onChange={(e) => setY(e.target.value)}
+                                placeholder="Y (m)"
+                            />
+
+                            <Space>
+                                <Button type="primary" onClick={handleSendCoord}>
+                                    设置
+                                </Button>
+                                <Button onClick={handleClearCurrent}>
+                                    清除
                                 </Button>
                             </Space>
 
-                            <Input value={x} onChange={(e) => setX(e.target.value)} placeholder="X (m)" />
-                            <Input value={y} onChange={(e) => setY(e.target.value)} placeholder="Y (m)" />
-
-                            <Space>
-                                <Button type="primary" onClick={handleSendCoord}>设置</Button>
-                                <Button onClick={handleClearCurrent}>清除</Button>
-                            </Space>
-
-                            <Space wrap>
-                                <Button onClick={handleImportDefaultAnchors}>导入默认描点</Button>
-                                <Button onClick={handleUseRecordAnchors}>标定记录锚点</Button>
-                                <Button danger onClick={handleClearAll}>清除所有锚标</Button>
-                            </Space>
+                            <Button danger onClick={handleClearAll}>
+                                清除所有锚点
+                            </Button>
                         </Space>
                     </Card>
                 </Col>
@@ -313,44 +304,26 @@ const MapsManager: React.FC = () => {
 
                                     {anchorList.map((a, idx) => {
                                         const px =
-                                            offset.left + a.x * scale.sx * meterToPixel;
+                                            offset.left + a.x * scale.sx * METER_TO_PIXEL;
                                         const py =
                                             offset.top +
                                             renderSize.height -
-                                            a.y * scale.sy * meterToPixel;
+                                            a.y * scale.sy * METER_TO_PIXEL;
 
                                         return (
-                                            <React.Fragment key={idx}>
-                                                <div
-                                                    style={{
-                                                        position: "absolute",
-                                                        left: px,
-                                                        top: py,
-                                                        width: 10,
-                                                        height: 10,
-                                                        background: "red",
-                                                        borderRadius: "50%",
-                                                        transform: "translate(-50%, -50%)",
-                                                    }}
-                                                />
-                                                {showMac && (
-                                                    <div
-                                                        style={{
-                                                            position: "absolute",
-                                                            left: px + 50,
-                                                            top: py - 15,
-                                                            fontSize: 12,
-                                                            background: "rgba(255,255,255,0.7)",
-                                                            padding: "1px 4px",
-                                                            borderRadius: 3,
-                                                            whiteSpace: "nowrap",
-                                                            transform: "translate(-50%, -50%)",
-                                                        }}
-                                                    >
-                                                        {a.mac}
-                                                    </div>
-                                                )}
-                                            </React.Fragment>
+                                            <div
+                                                key={idx}
+                                                style={{
+                                                    position: "absolute",
+                                                    left: px,
+                                                    top: py,
+                                                    width: 10,
+                                                    height: 10,
+                                                    background: "red",
+                                                    borderRadius: "50%",
+                                                    transform: "translate(-50%, -50%)",
+                                                }}
+                                            />
                                         );
                                     })}
                                 </>

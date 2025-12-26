@@ -17,6 +17,13 @@ enum EService {
 
     /** 服务器定位结果（RelayLocated 数据） */
     ILocateResultService = "LocateResultService",
+
+    /** 地图管理服务（获取地图列表、上传地图等） */
+    IMapService = "IMapService",
+
+    /** 地图配置服务（获取/保存地图相关配置，如比例尺等） */
+    IMapConfigService = "IMapConfigService",
+
 }
 
 export default EService;

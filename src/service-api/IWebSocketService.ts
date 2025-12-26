@@ -17,5 +17,5 @@ export default interface IWebSocketService {
      * 订阅 WebSocket 状态变化。
      * 返回取消订阅函数。
      */
-    subscribeStatus(listener: (status: WSStatus) => void): () => void;
+    subscribe(listener: (status: WSStatus) => void): () => void;
 }

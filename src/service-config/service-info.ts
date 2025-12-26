@@ -5,6 +5,8 @@ import BluetoothDataService from "../service-impl/BluetoothDataService";
 import BeaconPositionService from "../service-impl/BeaconPositionService";
 import LocateResultService from "../service-impl/LocateResultService";
 import WebSocketService from "../service-impl/WebSocketService";
+import MapService from "../service-impl/MapService";
+import MapConfigService from "../service-impl/MapConfigService";
 
 /**
  * 服务映射表
@@ -25,6 +27,12 @@ const services = {
 
     /** 服务端定位结果 RelayLocated（实时 XY 坐标） */
     [EService.ILocateResultService]: new LocateResultService(),
+
+    /** 地图管理服务（获取地图列表、上传地图等） */
+    [EService.IMapService]: new MapService(),
+
+    /** 地图配置服务（获取/保存地图相关配置，如比例尺等） */
+    [EService.IMapConfigService]: new MapConfigService(),
 };
 
 export default services;

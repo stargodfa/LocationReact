@@ -3,6 +3,8 @@ import { getServiceSync } from "@spring4js/container-browser";
 import IBluetoothDataService from "../service-api/IBluetoothDataService";
 import IBeaconPositionService from "../service-api/IBeaconPositionService";
 import ILocateResultService from "../service-api/ILocateResultService";
+import IMapService from "../service-api/IMapService";
+import IMapConfigService from "../service-api/IMapConfigService";
 import IWebSocketService, { WSStatus } from "../service-api/IWebSocketService";
 import EService from "../service-config/EService";
 
@@ -26,7 +28,8 @@ export default class WebSocketService implements IWebSocketService {
     private ble = getServiceSync<IBluetoothDataService>(EService.IBluetoothDataService);
     private anchors = getServiceSync<IBeaconPositionService>(EService.IBeaconPositionService);
     private locate = getServiceSync<ILocateResultService>(EService.ILocateResultService);
-
+    private maps = getServiceSync<IMapService>(EService.IMapService);
+    private mapConfig = getServiceSync<IMapConfigService>(EService.IMapConfigService);
     /* ================== 对外接口 ================== */
 
     start(): void {
@@ -42,7 +45,7 @@ export default class WebSocketService implements IWebSocketService {
         }
     }
 
-    subscribeStatus(listener: (status: WSStatus) => void): () => void {
+    subscribe(listener: (status: WSStatus) => void): () => void {
         this.listeners.add(listener);
 
         // 立即推送一次当前状态
@@ -140,7 +143,20 @@ export default class WebSocketService implements IWebSocketService {
             return;
         }
 
-        // ======== 以下保持你原来的三类分发逻辑 ========
+        // ======== 以下保持你分发逻辑 ========
+        console.log("[WS] received message:", msg);
+        // MapList → 地图服务
+        if (msg.cmd === "MapList" && Array.isArray(msg.maps)) {
+            this.maps.loadFromServer(msg.maps);
+            console.log("[WS] MapList loaded:", msg.maps);
+            return;
+        }
+
+        // 地图比例
+        if (msg.cmd === "MapScale" && typeof msg.meter_to_pixel === "number") {
+            this.mapConfig.setMeterToPixel(msg.meter_to_pixel);
+            return;
+        }
 
         // RelayLocated → 定位结果服务
         if (msg.cmd === "RelayLocated") {

@@ -11,33 +11,36 @@ import IWebSocketService, {
 import EService from "./service-config/EService";
 
 const App: React.FC = () => {
-  const [activeView, setActiveView] = useState<string>("RealtimeData"); // 默认显示“画面1”
+  const [activeView, setActiveView] = useState<string>("MapsManager");
   const [currentTime, setCurrentTime] = useState<string>(
     new Date().toLocaleTimeString()
   );
   const [wsStatus, setWsStatus] = useState<WSStatus>("disconnected");
 
   useEffect(() => {
-    // 获取单例 WebSocketService
     const wsService = getServiceSync<IWebSocketService>(
       EService.IWebSocketService
     );
 
-    // 启动连接（内部自己处理连接/重连）
     wsService.start();
 
-    // 订阅状态变化
-    const off = wsService.subscribeStatus((s) => {
+    // 订阅 WS 状态
+    const off = wsService.subscribe((s) => {
       setWsStatus(s);
+
+      // ⚠️ 只在「已连接」时发送一次
+      if (s === "connected") {
+        wsService.send({ cmd: "GetMapList" });
+        wsService.send({ cmd: "GetMapScale" });
+      }
     });
 
-    // 时钟
     const timer = setInterval(() => {
       setCurrentTime(new Date().toLocaleTimeString());
     }, 1000);
 
     return () => {
-      off(); // 取消状态订阅
+      off();
       clearInterval(timer);
     };
   }, []);
@@ -67,7 +70,7 @@ const App: React.FC = () => {
 
   return (
     <div style={{ paddingTop: 70, minHeight: "100vh", background: "#f5f5f5" }}>
-      {/* 顶部固定栏 */}
+      {/* 顶部栏 */}
       <div
         style={{
           position: "fixed",
@@ -84,10 +87,10 @@ const App: React.FC = () => {
           zIndex: 1000,
         }}
       >
-        {/* 左侧项目名 */}
-        <div style={{ fontSize: 18, fontWeight: "bold" }}>桌椅蓝牙定位</div>
+        <div style={{ fontSize: 18, fontWeight: "bold" }}>
+          桌椅蓝牙定位
+        </div>
 
-        {/* 中间切换按钮 */}
         <div
           style={{
             position: "absolute",
@@ -117,7 +120,6 @@ const App: React.FC = () => {
           </Space>
         </div>
 
-        {/* 右侧：WebSocket 状态 + 时间 */}
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           {renderWsStatusTag()}
           <div>{currentTime}</div>
@@ -125,7 +127,7 @@ const App: React.FC = () => {
       </div>
 
       {/* 页面内容 */}
-      <div style={{ marginTop: 0 }}>
+      <div>
         {activeView === "RealtimeData" && <RealtimeData />}
         {activeView === "MapsManager" && <MapsManager />}
         {activeView === "LocationView" && <LocationView />}
