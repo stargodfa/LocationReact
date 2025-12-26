@@ -26,8 +26,8 @@ export default interface IBeaconPositionService {
     getAllCoords(): BeaconCoord[];
 
     /* 设置默认坐标点 */
-    setDefaultCoords(coords: BeaconCoord[]): void;
+    setDefaultCoords(): void;
 
-    /* 从服务器加载坐标点 */
+    /* 从服务器加载预测坐标点 */
     loadFromServer(items: BeaconCoord[]): void;
 }

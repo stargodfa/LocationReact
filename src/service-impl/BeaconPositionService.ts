@@ -45,8 +45,6 @@ export default class BeaconPositionService
         delete next[mac];
         this.setState({ anchors: next });
 
-        // 如果后端实现了单个清除，就保留这条命令；
-        // 如果没有实现，也不会影响前端本地效果
         wsService.send({
             cmd: "ClearCurrentBeaconPosition",
             mac,
@@ -74,21 +72,14 @@ export default class BeaconPositionService
     }
 
     /** 设置默认坐标点 */
-    setDefaultCoords = (coords: BeaconCoord[]): void => {
-        coords.forEach(({ mac, x, y }) => {
-            this.setCoord(mac, x, y);
-            wsService.send({
-            cmd: "SetBeaconPosition",
-            mac,
-            x,
-            y,
-            mode: "manual"
-            });
-        });
-        
+    setDefaultCoords = (): void => {
+        wsService.send({
+        cmd: "SetDefaultBeaconPosition",
+
+        });   
     };
 
-    /** 从服务器加载坐标点 */
+    /** 从服务器加载预测坐标点 */
     loadFromServer = (items: BeaconCoord[]): void => {
         const next = { ...this.getState().anchors };
 

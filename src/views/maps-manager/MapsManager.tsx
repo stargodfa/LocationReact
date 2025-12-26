@@ -32,15 +32,6 @@ const { Option } = Select;
 
 const METER_TO_PIXEL = 20; // 像素与米的转换比例
 
-const BeaconDefaultList = [
-    { mac: "C3:00:00:24:7B:60", x: 10, y: 11 },
-    { mac: "C3:00:00:24:7B:6B", x: 0, y: 5 },
-    { mac: "C3:00:00:24:7B:6C", x: 5, y: 11 },
-    { mac: "C3:00:00:24:7B:70", x: 5, y: 5 },
-    { mac: "C3:00:00:24:7B:71", x: 0, y: 11 },
-    { mac: "C3:00:00:24:7B:73", x: 10, y: 5 },
-];
-
 // 默认平面图路径
 const DEFAULT_MAP_SRC = "public/maps/2401-02.png";
 
@@ -214,7 +205,7 @@ const MapsManager: React.FC = () => {
 
     /* ----------------- 导入默认描点 ----------------- */
     const handleImportDefaultAnchors = () => {
-        beaconPositionService.setDefaultCoords(BeaconDefaultList);
+        beaconPositionService.setDefaultCoords();
     };
 
     /* 标定记录锚点 */

@@ -85,7 +85,7 @@ const RealtimeData: React.FC = () => {
     /* ----------------- 过滤条件 ----------------- */
     const [macFilter, setMacFilter] = useState("");
     const [devTypeFilter, setDevTypeFilter] = useState("MBT02");
-    const [frameTypeFilter, setFrameTypeFilter] = useState("all");
+    const [frameTypeFilter, setFrameTypeFilter] = useState("locate");//默认显示定位结果
     const [dataTypeFilter, setDataTypeFilter] = useState("parsed");
     const [displayMode, setDisplayMode] =
         useState<"string" | "json">("string");

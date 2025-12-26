@@ -145,7 +145,7 @@ export default class WebSocketService implements IWebSocketService {
         // RelayLocated → 定位结果服务
         if (msg.cmd === "RelayLocated") {
             this.locate.pushLocate({
-                mac: msg.relay_mac,
+                mac: msg.target_mac,
                 x: msg.x,
                 y: msg.y,
                 rssi: msg.rssi,
