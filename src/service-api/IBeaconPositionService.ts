@@ -30,4 +30,7 @@ export default interface IBeaconPositionService {
 
     /* 从服务器加载预测坐标点 */
     loadFromServer(items: BeaconCoord[]): void;
+
+    /** WebSocket 广播入口。返回 true 表示已处理该消息 */
+    ingestFrame(msg: any): boolean;
 }

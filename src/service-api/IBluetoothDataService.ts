@@ -19,4 +19,7 @@ export default interface IBluetoothDataService {
     pushRow(row: DataRow): void;
 
     clearRealTimeDataList(): void;   // 如果要保留清除功能
+
+    /** WebSocket 广播入口。返回 true 表示已处理该消息 */
+    ingestFrame(msg: any): boolean;
 }

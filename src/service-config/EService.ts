@@ -24,6 +24,8 @@ enum EService {
     /** 地图配置服务（获取/保存地图相关配置，如比例尺等） */
     IMapConfigService = "IMapConfigService",
 
+    /** 信标列表服务（获取信标 MAC 列表） */
+    IBeaconListService = "IBeaconListService",
 }
 
 export default EService;

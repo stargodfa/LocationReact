@@ -32,6 +32,7 @@ const App: React.FC = () => {
       if (s === "connected") {
         wsService.send({ cmd: "GetMapList" });
         wsService.send({ cmd: "GetMapScale" });
+        wsService.send({ cmd: "GetBeaconList" });
       }
     });
 

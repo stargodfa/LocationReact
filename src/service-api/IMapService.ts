@@ -1,12 +1,15 @@
 export interface MapItem {
-    id: string;
-    name: string;
-    file: string;
-    url: string;
+  id: string;
+  name: string;
+  file: string;
+  url: string;
 }
 
 export default interface IMapService {
-    getState(): { maps: MapItem[] };
-    subscribe(fn: (maps: MapItem[]) => void): () => void;
-    loadFromServer(maps: MapItem[]): void;
+  getState(): { maps: MapItem[] };
+  subscribe(fn: (maps: MapItem[]) => void): () => void;
+  loadFromServer(maps: MapItem[]): void;
+
+  /** WebSocket 广播入口。返回 true 表示已处理该消息 */
+  ingestFrame(msg: any): boolean;
 }

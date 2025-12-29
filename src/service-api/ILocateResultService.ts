@@ -31,4 +31,7 @@ export default interface ILocateResultService {
 
     /** 清除所有定位结果 */
     clear(): void;
+
+    /** WebSocket 广播入口。返回 true 表示已处理该消息 */
+    ingestFrame(msg: any): boolean;
 }

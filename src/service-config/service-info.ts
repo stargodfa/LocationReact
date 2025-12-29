@@ -7,6 +7,7 @@ import LocateResultService from "../service-impl/LocateResultService";
 import WebSocketService from "../service-impl/WebSocketService";
 import MapService from "../service-impl/MapService";
 import MapConfigService from "../service-impl/MapConfigService";
+import BeaconListService from "../service-impl/BeaconListService";
 
 /**
  * 服务映射表
@@ -33,6 +34,9 @@ const services = {
 
     /** 地图配置服务（获取/保存地图相关配置，如比例尺等） */
     [EService.IMapConfigService]: new MapConfigService(),
+
+    /** 信标列表服务（获取信标 MAC 列表） */
+    [EService.IBeaconListService]: new BeaconListService(),
 };
 
 export default services;

@@ -11,4 +11,7 @@ export default interface IMapConfigService {
 
     /** 订阅配置变化 */
     subscribe(listener: (state: MapConfigState) => void): () => void;
+
+    /** WebSocket 广播入口。返回 true 表示已处理该消息 */
+    ingestFrame(msg: any): boolean;
 }
