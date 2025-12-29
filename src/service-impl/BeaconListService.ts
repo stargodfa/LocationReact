@@ -1,10 +1,12 @@
 // src/service-impl/BeaconListService.ts
-
+import { getServiceSync } from "@spring4js/container-browser";
 import IBeaconListService, {
   IBeaconListState,
   BeaconMac,
   BeaconListListener,
 } from "../service-api/IBeaconListService";
+import IWebSocketService from "../service-api/IWebSocketService";
+import EService from "../service-config/EService";
 
 /** 你服务器提供的 HTTP 接口路径。按你后端实际改这里即可。 */
 const DEFAULT_ENDPOINTS = ["/api/maclist", "/maclist", "/api/beacons/maclist"];
@@ -29,6 +31,9 @@ function isStringArray(x: any): x is string[] {
 }
 
 export default class BeaconListService implements IBeaconListService {
+  // 类内注入，避免模块加载阶段触发 DI
+  private wsService = getServiceSync<IWebSocketService>(EService.IWebSocketService);
+
   private state: IBeaconListState = {
     macList: [],
     loading: false,
@@ -103,7 +108,9 @@ export default class BeaconListService implements IBeaconListService {
       cmd === "BeaconList" ||
       cmd === "BeaconMacs"
     ) {
-      const macListField = msg.beaconlist ?? msg.maclist ?? msg.macs ?? msg.list ?? null;
+      const macListField =
+        msg.mac_list ?? msg.maclist ?? msg.macs ?? msg.list ?? msg.items ?? msg.beaconlist ?? null;
+
       if (isStringArray(macListField)) {
         this.emit({
           macList: dedupSort(macListField),
@@ -121,10 +128,10 @@ export default class BeaconListService implements IBeaconListService {
       return true;
     }
 
-    // 增量删除
+    // 增量删除（注意：这里只做本地移除，不发删除命令）
     if (cmd === "BeaconRemoved" || cmd === "MacRemoved") {
       const mac = msg.mac ?? msg.target_mac ?? msg.addr;
-      if (typeof mac === "string") this.removeMac(mac);
+      if (typeof mac === "string") this.removeMacLocal(mac);
       return true;
     }
 
@@ -150,7 +157,8 @@ export default class BeaconListService implements IBeaconListService {
     });
   }
 
-  removeMac(mac: BeaconMac): void {
+  /** 仅本地移除，不发命令。供 WS 回包调用 */
+  private removeMacLocal(mac: BeaconMac): void {
     const n = normalizeMac(mac);
     const next = this.state.macList.filter((m) => m !== n);
     this.emit({
@@ -158,5 +166,22 @@ export default class BeaconListService implements IBeaconListService {
       lastUpdatedAt: Date.now(),
       error: undefined,
     });
+  }
+
+  /** 对外：删除指定 beacon。会发命令给服务器，并乐观更新本地列表 */
+  removeBeacon(mac: BeaconMac): void {
+    const n = normalizeMac(mac);
+    if (!n) return;
+
+    // 1) 发给服务器
+    this.wsService.send({ cmd: "RemoveBeacon", mac: n });
+
+    // 2) 本地乐观更新
+    this.removeMacLocal(n);
+  }
+
+  // 兼容你旧代码如果外部还在调用 removeMac，则让它走 removeBeacon
+  removeMac(mac: BeaconMac): void {
+    this.removeBeacon(mac);
   }
 }

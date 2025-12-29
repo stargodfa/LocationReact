@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Card, Row, Col, Space, Typography, Button, Select, Input } from "antd";
+import { Card, Row, Col, Space, Typography, Button, Select, Input, Popconfirm} from "antd";
 
 import { getServiceSync } from "@spring4js/container-browser";
 import IBeaconPositionService from "../../service-api/IBeaconPositionService";
@@ -157,6 +157,10 @@ const MapsManager: React.FC = () => {
     beaconPositionService.setCoord(selectedMac, nx, ny);
   };
 
+  const handleDeleteMac = () => {
+    if (selectedMac) beaconListService.removeBeacon(selectedMac);
+  };
+
   const handleClearCurrent = () => {
     if (selectedMac) beaconPositionService.clearCoord(selectedMac);
   };
@@ -242,9 +246,21 @@ const MapsManager: React.FC = () => {
 
               <Space>
                 <Button type="primary" onClick={handleSendCoord}>
-                  设置
+                    设置
                 </Button>
-                <Button onClick={handleClearCurrent}>清除</Button>
+                <Button onClick={handleClearCurrent}>
+                    清除
+                </Button>
+                
+                <Popconfirm
+                    title="确认删除该Beacon列表信息？"
+                    okText="删除"
+                    cancelText="取消"
+                    onConfirm={handleDeleteMac}
+                    disabled={!selectedMac}
+                >
+                    <Button danger disabled={!selectedMac}>删除</Button>
+                </Popconfirm>
               </Space>
 
               <Space wrap>

@@ -29,6 +29,9 @@ export default interface IBeaconListService {
 
     /** 手动删除（一般不用） */
     removeMac(mac: BeaconMac): void;
+    
+    /** 手动删除某个 MAC 地址 */
+    removeBeacon(mac: string): void;
 
     /** WebSocket 广播入口。返回 true 表示已处理该消息 */
     ingestFrame(msg: any): boolean;
