@@ -63,10 +63,10 @@ const MapsManager: React.FC = () => {
   /* -------- 地图 -------- */
   const [mapList, setMapList] = useState<MapItem[]>([]);
   const [selectedMapId, setSelectedMapId] = useState<string>();
-  const [mapSrc, setMapSrc] = useState<string>("");
+  const [mapScale, setmapScale] = useState<string>("");
 
   /* -------- Beacon -------- */
-  const [selectedMac, setSelectedMac] = useState("");
+  const [selectedBeacon, setselectedBeacon] = useState("");
   const [x, setX] = useState("");
   const [y, setY] = useState("");
   const [anchorList, setAnchorList] = useState<AnchorItem[]>([]);
@@ -114,21 +114,24 @@ const MapsManager: React.FC = () => {
   /* ================= 比例同步 ================= */
   useEffect(() => {
     setMeterToPixel(mapConfigService.getState().meterToPixel);
-    return mapConfigService.subscribe((s) => setMeterToPixel(s.meterToPixel));
+    const unsub = mapConfigService.subscribe((s) => {
+      setMeterToPixel(s.meterToPixel);
+    });
+    return unsub;
   }, []);
 
   /* ================= 切换地图 ================= */
   useEffect(() => {
     if (!selectedMapId) {
-      setMapSrc("");
+      setmapScale("");
       return;
     }
     const map = mapList.find((m) => m.id === selectedMapId);
     if (!map) {
-      setMapSrc("");
+      setmapScale("");
       return;
     }
-    setMapSrc(HTTP_BASE + map.url);
+    setmapScale(HTTP_BASE + map.url);
   }, [selectedMapId, mapList]);
 
   /* ================= 图片布局 ================= */
@@ -177,10 +180,10 @@ const MapsManager: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!selectedMac) return;
-    if (beaconMacList.includes(selectedMac)) return;
-    setSelectedMac("");
-  }, [beaconMacList, selectedMac]);
+    if (!selectedBeacon) return;
+    if (beaconMacList.includes(selectedBeacon)) return;
+    setselectedBeacon("");
+  }, [beaconMacList, selectedBeacon]);
 
   /* ================== 提交比例：统一入口（会发给服务端） ================== */
   const commitMeterToPixel = (v: number) => {
@@ -198,16 +201,16 @@ const MapsManager: React.FC = () => {
   const handleSendCoord = () => {
     const nx = Number(x);
     const ny = Number(y);
-    if (!selectedMac || Number.isNaN(nx) || Number.isNaN(ny)) return;
-    beaconPositionService.setCoord(selectedMac, nx, ny);
+    if (!selectedBeacon || Number.isNaN(nx) || Number.isNaN(ny)) return;
+    beaconPositionService.setCoord(selectedBeacon, nx, ny);
   };
 
   const handleDeleteMac = () => {
-    if (selectedMac) beaconListService.removeBeacon(selectedMac);
+    if (selectedBeacon) beaconListService.removeBeacon(selectedBeacon);
   };
 
   const handleClearCurrent = () => {
-    if (selectedMac) beaconPositionService.clearCoord(selectedMac);
+    if (selectedBeacon) beaconPositionService.clearCoord(selectedBeacon);
   };
 
   const handleClearAll = () => {
@@ -231,7 +234,7 @@ const MapsManager: React.FC = () => {
 
   /* ================= 比例标定：进入/退出 ================= */
   const startCalibrate = () => {
-    if (!mapSrc) return;
+    if (!mapScale) return;
     endDrag();
     setCalibMode(true);
     setCalibPoints([]);
@@ -413,7 +416,7 @@ const MapsManager: React.FC = () => {
 
   const startDrag = (mac: string) => (e: React.PointerEvent<HTMLDivElement>) => {
     if (calibMode) return;
-    if (!mapSrc) return;
+    if (!mapScale) return;
 
     e.preventDefault();
     e.stopPropagation();
@@ -488,7 +491,7 @@ const MapsManager: React.FC = () => {
                   onPressEnter={() => commitMeterToPixel(meterToPixel)}
                   style={{ flex: 1 }}
                 />
-                <Button onClick={startCalibrate} disabled={!mapSrc}>
+                <Button onClick={startCalibrate} disabled={!mapScale}>
                   标定地图比例
                 </Button>
               </Space>
@@ -511,8 +514,8 @@ const MapsManager: React.FC = () => {
               <Space style={{ width: "100%" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <Select
-                    value={selectedMac || undefined}
-                    onChange={setSelectedMac}
+                    value={selectedBeacon || undefined}
+                    onChange={setselectedBeacon}
                     placeholder="选择 Beacon"
                     disabled={beaconMacList.length === 0}
                     style={{ width: "100%" }}
@@ -546,9 +549,9 @@ const MapsManager: React.FC = () => {
                   okText="删除"
                   cancelText="取消"
                   onConfirm={handleDeleteMac}
-                  disabled={!selectedMac}
+                  disabled={!selectedBeacon}
                 >
-                  <Button danger disabled={!selectedMac}>
+                  <Button danger disabled={!selectedBeacon}>
                     删除
                   </Button>
                 </Popconfirm>
@@ -597,11 +600,11 @@ const MapsManager: React.FC = () => {
                 cursor: calibMode ? "crosshair" : draggingMac ? "grabbing" : "default",
               }}
             >
-              {mapSrc ? (
+              {mapScale ? (
                 <>
                   <img
                     ref={imgRef}
-                    src={mapSrc}
+                    src={mapScale}
                     onLoad={computeImageLayout}
                     style={{
                       width: "100%",
