@@ -7,6 +7,8 @@ import {
   Select,
   Input,
   Popconfirm,
+  Modal,
+  InputNumber,
 } from "antd";
 
 import { getServiceSync } from "@spring4js/container-browser";
@@ -44,6 +46,15 @@ interface MapItem {
   url: string;
 }
 
+type CalibPoint = {
+  // wrap 内的渲染坐标（px）
+  rx: number;
+  ry: number;
+  // 原图像素坐标（natural image px）
+  ix: number;
+  iy: number;
+};
+
 /* ================= 组件 ================= */
 
 const MapsManager: React.FC = () => {
@@ -68,6 +79,13 @@ const MapsManager: React.FC = () => {
   const [scale, setScale] = useState({ sx: 1, sy: 1 });
   const [offset, setOffset] = useState({ left: 0, top: 0 });
   const [renderSize, setRenderSize] = useState({ width: 0, height: 0 });
+
+  /* -------- 比例标定（地图点选） -------- */
+  const [calibMode, setCalibMode] = useState(false);
+  const [calibPoints, setCalibPoints] = useState<CalibPoint[]>([]);
+  const [calibModalOpen, setCalibModalOpen] = useState(false);
+  const [calibMeters, setCalibMeters] = useState<number>(1);
+  const [calibPixelDist, setCalibPixelDist] = useState<number>(0);
 
   /* ================= 地图列表 ================= */
   useEffect(() => {
@@ -186,15 +204,94 @@ const MapsManager: React.FC = () => {
   };
 
   /* ================= 布局：左右独立容器（不使用栅格） ================= */
-  // 这里用 mapList 为空作为“WS未就绪”的近似判断。若你有真实 wsConnected 状态，替换即可。
   const wsNotReady = mapList.length === 0;
-
-  // WS未连时左侧更宽，保证按钮一行更容易显示全，但不挤压右侧（右侧只是剩余空间）
   const leftWidthPx = wsNotReady ? 400 : 400;
 
+  /* ================= 比例标定：进入/退出 ================= */
+  const startCalibrate = () => {
+    if (!mapSrc) return;
+    setCalibMode(true);
+    setCalibPoints([]);
+    setCalibModalOpen(false);
+    setCalibMeters(1);
+    setCalibPixelDist(0);
+  };
+
+  const cancelCalibrate = () => {
+    setCalibMode(false);
+    setCalibPoints([]);
+    setCalibModalOpen(false);
+    setCalibMeters(1);
+    setCalibPixelDist(0);
+  };
+
+  /* ================= 比例标定：地图点击取点 ================= */
+  const handleMapClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!calibMode) return;
+
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+
+    // 必须已经计算出布局
+    if (renderSize.width <= 0 || renderSize.height <= 0) return;
+    if (scale.sx <= 0 || scale.sy <= 0) return;
+
+    const rect = wrap.getBoundingClientRect();
+    const rx = e.clientX - rect.left;
+    const ry = e.clientY - rect.top;
+
+    // 只允许点在图片实际显示区域内（排除 contain 留白）
+    const inImg =
+      rx >= offset.left &&
+      rx <= offset.left + renderSize.width &&
+      ry >= offset.top &&
+      ry <= offset.top + renderSize.height;
+
+    if (!inImg) return;
+
+    // 转换到原图像素坐标（top-left 原点）
+    const ix = (rx - offset.left) / scale.sx;
+    const iy = (ry - offset.top) / scale.sy;
+
+    setCalibPoints((prev) => {
+      if (prev.length >= 2) return prev;
+
+      const next = [...prev, { rx, ry, ix, iy }];
+
+      if (next.length === 2) {
+        const dx = next[1].ix - next[0].ix;
+        const dy = next[1].iy - next[0].iy;
+        const pd = Math.hypot(dx, dy);
+        setCalibPixelDist(pd);
+        setCalibModalOpen(true);
+      }
+
+      return next;
+    });
+  };
+
+  /* ================= 比例标定：确认设置 ================= */
+  const confirmCalibrate = () => {
+    if (calibPoints.length !== 2) return;
+    if (!calibMeters || calibMeters <= 0) return;
+    if (!calibPixelDist || calibPixelDist <= 0) return;
+
+    const newM2P = calibPixelDist / calibMeters;
+
+    // 保留两位小数，避免 UI 抖动
+    const fixed = Number(newM2P.toFixed(2));
+
+    setMeterToPixel(fixed);
+    mapConfigService.setMeterToPixel(fixed);
+
+    setCalibModalOpen(false);
+    setCalibMode(false);
+    setCalibPoints([]);
+  };
+
+  /* ================= 渲染 ================= */
   return (
     <div style={{ padding: "0 16px 16px" }}>
-      {/* 组件内置样式：双面板布局 + 小屏自动堆叠 */}
       <style>{`
         .mm-layout {
           display: flex;
@@ -208,20 +305,12 @@ const MapsManager: React.FC = () => {
         }
         .mm-right {
           flex: 1 1 auto;
-          min-width: 0; /* 关键：允许右侧内容正确缩放，不反挤左侧 */
+          min-width: 0;
         }
         @media (max-width: 992px) {
-          .mm-layout {
-            flex-direction: column;
-          }
-          .mm-left {
-            width: 100%;
-            max-width: none;
-            flex: 0 0 auto;
-          }
-          .mm-right {
-            width: 100%;
-          }
+          .mm-layout { flex-direction: column; }
+          .mm-left { width: 100%; max-width: none; flex: 0 0 auto; }
+          .mm-right { width: 100%; }
         }
       `}</style>
 
@@ -252,12 +341,28 @@ const MapsManager: React.FC = () => {
           <Card title="地图比例设置" size="small" style={{ marginBottom: 16 }}>
             <Space direction="vertical" style={{ width: "100%" }}>
               <Text>1 米 = 像素</Text>
-              <Input
-                type="number"
-                value={meterToPixel}
-                onChange={(e) => setMeterToPixel(Number(e.target.value))}
-                onBlur={() => mapConfigService.setMeterToPixel(meterToPixel)}
-              />
+
+              <Space style={{ width: "100%" }}>
+                <Input
+                  type="number"
+                  value={meterToPixel}
+                  onChange={(e) => setMeterToPixel(Number(e.target.value))}
+                  onBlur={() => mapConfigService.setMeterToPixel(meterToPixel)}
+                  style={{ flex: 1 }}
+                />
+                <Button
+                  onClick={startCalibrate}
+                  disabled={!mapSrc}
+                >
+                  标定地图比例
+                </Button>
+              </Space>
+
+              {calibMode && (
+                <Text type="warning" style={{ fontSize: 12 }}>
+                  标定模式：请在地图上点击两点，然后输入两点的实际距离（米）。
+                </Text>
+              )}
             </Space>
           </Card>
 
@@ -322,9 +427,21 @@ const MapsManager: React.FC = () => {
 
         {/* 右侧独立容器 */}
         <div className="mm-right">
-          <Card title="地图预览" size="small">
+          <Card
+            title="地图预览"
+            size="small"
+            extra={
+              calibMode ? (
+                <Space>
+                  <Button onClick={() => setCalibPoints([])}>重选两点</Button>
+                  <Button danger onClick={cancelCalibrate}>退出标定</Button>
+                </Space>
+              ) : null
+            }
+          >
             <div
               ref={wrapRef}
+              onClick={handleMapClick}
               style={{
                 width: "100%",
                 height: "calc(100vh - 220px)",
@@ -333,6 +450,7 @@ const MapsManager: React.FC = () => {
                 overflow: "hidden",
                 border: "1px solid #ddd",
                 background: "#fff",
+                cursor: calibMode ? "crosshair" : "default",
               }}
             >
               {mapSrc ? (
@@ -346,9 +464,73 @@ const MapsManager: React.FC = () => {
                       height: "100%",
                       objectFit: "contain",
                       pointerEvents: "none",
+                      userSelect: "none",
                     }}
                   />
 
+                  {/* ====== 标定点与连线（仅在标定模式显示） ====== */}
+                  {calibMode && (
+                    <>
+                      {/* 连线 */}
+                      {calibPoints.length === 2 && (
+                        <svg
+                          style={{
+                            position: "absolute",
+                            inset: 0,
+                            pointerEvents: "none",
+                          }}
+                        >
+                          <line
+                            x1={calibPoints[0].rx}
+                            y1={calibPoints[0].ry}
+                            x2={calibPoints[1].rx}
+                            y2={calibPoints[1].ry}
+                            stroke="rgba(0,0,255,0.7)"
+                            strokeWidth={2}
+                          />
+                        </svg>
+                      )}
+
+                      {/* 点 */}
+                      {calibPoints.map((p, i) => (
+                        <React.Fragment key={i}>
+                          <div
+                            style={{
+                              position: "absolute",
+                              left: p.rx,
+                              top: p.ry,
+                              width: 12,
+                              height: 12,
+                              background: i === 0 ? "rgba(0,0,255,0.9)" : "rgba(0,0,255,0.6)",
+                              borderRadius: "50%",
+                              transform: "translate(-50%, -50%)",
+                              pointerEvents: "none",
+                              boxShadow: "0 0 0 2px rgba(255,255,255,0.8)",
+                            }}
+                          />
+                          <div
+                            style={{
+                              position: "absolute",
+                              left: p.rx + 16,
+                              top: p.ry - 12,
+                              fontSize: 12,
+                              background: "rgba(255,255,255,0.85)",
+                              padding: "1px 6px",
+                              borderRadius: 4,
+                              whiteSpace: "nowrap",
+                              transform: "translate(0, 0)",
+                              pointerEvents: "none",
+                              border: "1px solid rgba(0,0,0,0.08)",
+                            }}
+                          >
+                            点{i + 1}
+                          </div>
+                        </React.Fragment>
+                      ))}
+                    </>
+                  )}
+
+                  {/* ====== Anchor 点（设置 pointerEvents:none，避免干扰标定点击） ====== */}
                   {anchorList.map((a, idx) => {
                     const px = offset.left + a.x * scale.sx * meterToPixel;
                     const py =
@@ -368,6 +550,7 @@ const MapsManager: React.FC = () => {
                             background: "red",
                             borderRadius: "50%",
                             transform: "translate(-50%, -50%)",
+                            pointerEvents: "none",
                           }}
                         />
                         {showMac && (
@@ -382,6 +565,7 @@ const MapsManager: React.FC = () => {
                               borderRadius: 3,
                               whiteSpace: "nowrap",
                               transform: "translate(-50%, -50%)",
+                              pointerEvents: "none",
                             }}
                           >
                             {a.mac}
@@ -398,6 +582,44 @@ const MapsManager: React.FC = () => {
           </Card>
         </div>
       </div>
+
+      {/* ===== 标定确认对话框 ===== */}
+      <Modal
+        title="设置地图比例"
+        open={calibModalOpen}
+        onCancel={cancelCalibrate}
+        onOk={confirmCalibrate}
+        okText="确认并更新比例"
+        cancelText="取消"
+        destroyOnClose
+      >
+        <Space direction="vertical" style={{ width: "100%" }}>
+          <Text>已选择两点。</Text>
+          <Text type="secondary">
+            两点像素距离（原图 px）：{calibPixelDist ? calibPixelDist.toFixed(2) : "-"}
+          </Text>
+
+          <Space align="center">
+            <Text>两点实际距离（米）</Text>
+            <InputNumber
+              min={0.01}
+              value={calibMeters}
+              onChange={(v) => setCalibMeters(Number(v ?? 0))}
+              style={{ width: 160 }}
+            />
+          </Space>
+
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            计算方式：1米像素 = 像素距离 / 实际米数
+          </Text>
+
+          {calibMeters > 0 && calibPixelDist > 0 && (
+            <Text>
+              预览结果：1 米 ≈ {(calibPixelDist / calibMeters).toFixed(2)} px
+            </Text>
+          )}
+        </Space>
+      </Modal>
     </div>
   );
 };
