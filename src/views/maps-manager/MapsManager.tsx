@@ -417,7 +417,14 @@ const MapsManager: React.FC = () => {
      */
     const unsub = mapService.subscribe((maps) => {
       setMapList(maps);
-      setSelectedMapId((prev) => prev ?? (maps.length > 0 ? maps[0].id : undefined));
+
+      setSelectedMapId((prev) => {
+        const next = prev ?? (maps.length > 0 ? maps[0].id : undefined);
+        if (next) {
+          beaconPositionService.setCurrentMap(next);
+        }
+        return next;
+      });
     });
     return unsub;
   }, []);
@@ -441,27 +448,22 @@ const MapsManager: React.FC = () => {
 
   /* ================= 切换地图（selectedMapId + mapList -> mapScale URL） ================= */
   useEffect(() => {
-    // 未选择地图时清空 URL
     if (!selectedMapId) {
       setmapScale("");
       return;
     }
 
-    // 从列表找到对应 map
+    beaconPositionService.setCurrentMap(selectedMapId);
+
     const map = mapList.find((m) => m.id === selectedMapId);
     if (!map) {
       setmapScale("");
       return;
     }
 
-    /**
-     * 拼接图片 URL：
-     * - 数据来源：HTTP_BASE + map.url
-     * - 用途：加载后端静态地图图片
-     * - 流向：<img src={mapScale}>
-     */
     setmapScale(HTTP_BASE + map.url);
   }, [selectedMapId, mapList]);
+
 
   /* ================= 图片布局计算：把“原图”按 contain 缩放到容器 ================= */
 
@@ -524,19 +526,24 @@ const MapsManager: React.FC = () => {
 
   /* ================= Anchor 同步（BeaconPositionService -> anchorList） ================= */
   useEffect(() => {
-    // 初始读取：anchors 可能是对象映射，取 values 转成数组
-    setAnchorList(Object.values(beaconPositionService.getState().anchors));
+    if (!selectedMapId) {
+      setAnchorList([]);
+      return;
+    }
 
-    /**
-     * 订阅 anchors 变化：
-     * - 数据来源：beaconPositionService 内部 state 更新（来自后端或本地 setCoord）
-     * - 用途：刷新地图上的锚点红点
-     * - 流向：setAnchorList -> anchorList.map 渲染
-     */
-    return beaconPositionService.subscribe((s) => {
-      setAnchorList(Object.values(s.anchors));
-    });
-  }, []);
+    const sync = () => {
+      const s = beaconPositionService.getState();
+      setAnchorList(
+        Object.values(s.anchorsByMap[selectedMapId] || {})
+      );
+    };
+
+    // 初次同步
+    sync();
+
+    // 订阅 service 变化
+    return beaconPositionService.subscribe(sync);
+  }, [selectedMapId]);
 
   /* ================= Beacon MAC 列表同步（BeaconListService -> beaconMacList） ================= */
   useEffect(() => {
