@@ -1,5 +1,13 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Card, Row, Col, Space, Typography, Button, Select, Input, Popconfirm} from "antd";
+import {
+  Card,
+  Space,
+  Typography,
+  Button,
+  Select,
+  Input,
+  Popconfirm,
+} from "antd";
 
 import { getServiceSync } from "@spring4js/container-browser";
 import IBeaconPositionService from "../../service-api/IBeaconPositionService";
@@ -177,14 +185,54 @@ const MapsManager: React.FC = () => {
     beaconPositionService.getAllCoords();
   };
 
-  /* ================= 渲染 ================= */
+  /* ================= 布局：左右独立容器（不使用栅格） ================= */
+  // 这里用 mapList 为空作为“WS未就绪”的近似判断。若你有真实 wsConnected 状态，替换即可。
+  const wsNotReady = mapList.length === 0;
+
+  // WS未连时左侧更宽，保证按钮一行更容易显示全，但不挤压右侧（右侧只是剩余空间）
+  const leftWidthPx = wsNotReady ? 400 : 400;
+
   return (
     <div style={{ padding: "0 16px 16px" }}>
+      {/* 组件内置样式：双面板布局 + 小屏自动堆叠 */}
+      <style>{`
+        .mm-layout {
+          display: flex;
+          gap: 16px;
+          align-items: stretch;
+        }
+        .mm-left {
+          flex: 0 0 var(--mm-left-width);
+          width: var(--mm-left-width);
+          max-width: var(--mm-left-width);
+        }
+        .mm-right {
+          flex: 1 1 auto;
+          min-width: 0; /* 关键：允许右侧内容正确缩放，不反挤左侧 */
+        }
+        @media (max-width: 992px) {
+          .mm-layout {
+            flex-direction: column;
+          }
+          .mm-left {
+            width: 100%;
+            max-width: none;
+            flex: 0 0 auto;
+          }
+          .mm-right {
+            width: 100%;
+          }
+        }
+      `}</style>
+
       <Title level={4}>画面二 · 地图管理</Title>
 
-      <Row gutter={16}>
-        {/* 左侧 */}
-        <Col xs={24} md={8} lg={7} xl={6}>
+      <div
+        className="mm-layout"
+        style={{ ["--mm-left-width" as any]: `${leftWidthPx}px` }}
+      >
+        {/* 左侧独立容器 */}
+        <div className="mm-left">
           <Card title="房间地图选择" size="small" style={{ marginBottom: 16 }}>
             <Select
               value={selectedMapId}
@@ -217,49 +265,47 @@ const MapsManager: React.FC = () => {
             <Space direction="vertical" style={{ width: "100%" }}>
               <Space style={{ width: "100%" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                    <Select
+                  <Select
                     value={selectedMac || undefined}
                     onChange={setSelectedMac}
                     placeholder="选择 Beacon"
                     disabled={beaconMacList.length === 0}
                     style={{ width: "100%" }}
-                    // antd v4 用 dropdownMatchSelectWidth，v5 用 popupMatchSelectWidth
                     popupMatchSelectWidth={false as any}
-                    dropdownStyle={{ minWidth: 180 }} // 可按需调大
+                    dropdownStyle={{ minWidth: 180 }}
                     optionLabelProp="value"
-                    >
+                  >
                     {beaconMacList.map((mac) => (
-                        <Option key={mac} value={mac}>
+                      <Option key={mac} value={mac}>
                         <span style={{ whiteSpace: "nowrap" }}>{mac}</span>
-                        </Option>
+                      </Option>
                     ))}
-                    </Select>
+                  </Select>
                 </div>
-                    <Button onClick={() => setShowMac((v) => !v)}>
-                        {showMac ? "隐藏 MAC" : "显示 MAC"}
-                    </Button>
-                </Space>
-
+                <Button onClick={() => setShowMac((v) => !v)}>
+                  {showMac ? "隐藏 MAC" : "显示 MAC"}
+                </Button>
+              </Space>
 
               <Input value={x} onChange={(e) => setX(e.target.value)} placeholder="X (m)" />
               <Input value={y} onChange={(e) => setY(e.target.value)} placeholder="Y (m)" />
 
               <Space>
                 <Button type="primary" onClick={handleSendCoord}>
-                    设置
+                  设置
                 </Button>
-                <Button onClick={handleClearCurrent}>
-                    清除
-                </Button>
-                
+                <Button onClick={handleClearCurrent}>清除</Button>
+
                 <Popconfirm
-                    title="确认删除该Beacon列表信息？"
-                    okText="删除"
-                    cancelText="取消"
-                    onConfirm={handleDeleteMac}
-                    disabled={!selectedMac}
+                  title="确认删除该Beacon列表信息？"
+                  okText="删除"
+                  cancelText="取消"
+                  onConfirm={handleDeleteMac}
+                  disabled={!selectedMac}
                 >
-                    <Button danger disabled={!selectedMac}>删除</Button>
+                  <Button danger disabled={!selectedMac}>
+                    删除
+                  </Button>
                 </Popconfirm>
               </Space>
 
@@ -272,10 +318,10 @@ const MapsManager: React.FC = () => {
               </Space>
             </Space>
           </Card>
-        </Col>
+        </div>
 
-        {/* 右侧地图 */}
-        <Col xs={24} md={16} lg={17} xl={18}>
+        {/* 右侧独立容器 */}
+        <div className="mm-right">
           <Card title="地图预览" size="small">
             <div
               ref={wrapRef}
@@ -350,8 +396,8 @@ const MapsManager: React.FC = () => {
               )}
             </div>
           </Card>
-        </Col>
-      </Row>
+        </div>
+      </div>
     </div>
   );
 };
