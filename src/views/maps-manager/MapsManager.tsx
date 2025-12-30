@@ -172,23 +172,27 @@ const MapsManager: React.FC = () => {
   /* ================= Beacon MAC 列表（来自 WS BeaconList） ================= */
   useEffect(() => {
     setBeaconMacList(beaconListService.getState().macList);
-
-    const unsub = beaconListService.subscribe((s) => {
-      setBeaconMacList(s.macList);
-    });
-
-    // 重要：移除 refresh() 的 HTTP 拉取，避免 404（你这里 WS 已经会推送 BeaconList）
-    // beaconListService.refresh().catch(() => {});
-
+    const unsub = beaconListService.subscribe((s) => setBeaconMacList(s.macList));
     return unsub;
   }, []);
 
-  /* 可选：列表变化后修正当前选择 */
   useEffect(() => {
     if (!selectedMac) return;
     if (beaconMacList.includes(selectedMac)) return;
     setSelectedMac("");
   }, [beaconMacList, selectedMac]);
+
+  /* ================== 提交比例：统一入口（会发给服务端） ================== */
+  const commitMeterToPixel = (v: number) => {
+    const fixed = Number(Number(v).toFixed(2));
+    if (!Number.isFinite(fixed) || fixed <= 0) return;
+
+    // UI 立刻显示
+    setMeterToPixel(fixed);
+
+    // 通过 service（service 内部会通过 WS 发给后端）
+    mapConfigService.setMeterToPixel(fixed);
+  };
 
   /* ================= 坐标操作 ================= */
   const handleSendCoord = () => {
@@ -228,7 +232,7 @@ const MapsManager: React.FC = () => {
   /* ================= 比例标定：进入/退出 ================= */
   const startCalibrate = () => {
     if (!mapSrc) return;
-    endDrag(); // 标定时禁用拖拽
+    endDrag();
     setCalibMode(true);
     setCalibPoints([]);
     setCalibModalOpen(false);
@@ -292,9 +296,7 @@ const MapsManager: React.FC = () => {
     if (!calibMeters || calibMeters <= 0) return;
     if (!calibPixelDist || calibPixelDist <= 0) return;
 
-    const fixed = Number((calibPixelDist / calibMeters).toFixed(2));
-    setMeterToPixel(fixed);
-    mapConfigService.setMeterToPixel(fixed);
+    commitMeterToPixel(calibPixelDist / calibMeters);
 
     setCalibModalOpen(false);
     setCalibMode(false);
@@ -377,7 +379,7 @@ const MapsManager: React.FC = () => {
 
   function endDrag() {
     const st = dragRef.current;
-    const mac = st.mac; // 先记住，后面要删预览
+    const mac = st.mac;
 
     if (st.raf != null) {
       cancelAnimationFrame(st.raf);
@@ -391,7 +393,6 @@ const MapsManager: React.FC = () => {
 
     setDraggingMac(null);
 
-    // 关键：松开就清掉预览覆盖，避免后续“导入默认描点”UI不变化
     if (mac) {
       setDragPreview((prev) => {
         const next = { ...prev };
@@ -417,8 +418,11 @@ const MapsManager: React.FC = () => {
     e.preventDefault();
     e.stopPropagation();
 
-    // 关键：捕获指针，保证 pointerup 不丢
-    e.currentTarget.setPointerCapture(e.pointerId);
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
 
     setDraggingMac(mac);
 
@@ -440,17 +444,12 @@ const MapsManager: React.FC = () => {
         .mm-left { flex:0 0 var(--mm-left-width); width:var(--mm-left-width); max-width:var(--mm-left-width); }
         .mm-right { flex:1 1 auto; min-width:0; }
         @media (max-width: 992px) {
-          .mm-layout { flex-direction: column; }
+          .mm-layout { flex-orientation: column; }
           .mm-left { width: 100%; max-width: none; flex: 0 0 auto; }
           .mm-right { width: 100%; }
         }
-
-        /* 关键：下拉弹层最小宽度 */
-        .mm-beacon-popup {
-          min-width: 180px;
-        }
+        .mm-beacon-popup { min-width: 180px; }
       `}</style>
-
 
       <Title level={4}>画面二 · 地图管理</Title>
 
@@ -485,7 +484,8 @@ const MapsManager: React.FC = () => {
                   type="number"
                   value={meterToPixel}
                   onChange={(e) => setMeterToPixel(Number(e.target.value))}
-                  onBlur={() => mapConfigService.setMeterToPixel(meterToPixel)}
+                  onBlur={() => commitMeterToPixel(meterToPixel)}
+                  onPressEnter={() => commitMeterToPixel(meterToPixel)}
                   style={{ flex: 1 }}
                 />
                 <Button onClick={startCalibrate} disabled={!mapSrc}>
@@ -499,7 +499,8 @@ const MapsManager: React.FC = () => {
                 </Text>
               ) : (
                 <Text type="secondary" style={{ fontSize: 12 }}>
-                  提示：按住红点拖动，松开即保存并实时上报。
+                  提示：按住红色信标点拖动，松开即保存并实时上报。
+                       手动输入比例后，按回车或移出输入框生效。
                 </Text>
               )}
             </Space>
@@ -615,13 +616,7 @@ const MapsManager: React.FC = () => {
                   {calibMode && (
                     <>
                       {calibPoints.length === 2 && (
-                        <svg
-                          style={{
-                            position: "absolute",
-                            inset: 0,
-                            pointerEvents: "none",
-                          }}
-                        >
+                        <svg style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
                           <line
                             x1={calibPoints[0].rx}
                             y1={calibPoints[0].ry}
@@ -642,8 +637,7 @@ const MapsManager: React.FC = () => {
                               top: p.ry,
                               width: 12,
                               height: 12,
-                              background:
-                                i === 0 ? "rgba(0,0,255,0.9)" : "rgba(0,0,255,0.6)",
+                              background: i === 0 ? "rgba(0,0,255,0.9)" : "rgba(0,0,255,0.6)",
                               borderRadius: "50%",
                               transform: "translate(-50%, -50%)",
                               pointerEvents: "none",
@@ -678,10 +672,7 @@ const MapsManager: React.FC = () => {
                     const ay = p ? p.y : a.y;
 
                     const px = offset.left + ax * scale.sx * meterToPixel;
-                    const py =
-                      offset.top +
-                      renderSize.height -
-                      ay * scale.sy * meterToPixel;
+                    const py = offset.top + renderSize.height - ay * scale.sy * meterToPixel;
 
                     const isDragging = draggingMac === a.mac;
 
@@ -698,11 +689,7 @@ const MapsManager: React.FC = () => {
                             background: isDragging ? "#fa541c" : "red",
                             borderRadius: "50%",
                             transform: "translate(-50%, -50%)",
-                            cursor: calibMode
-                              ? "not-allowed"
-                              : isDragging
-                              ? "grabbing"
-                              : "grab",
+                            cursor: calibMode ? "not-allowed" : isDragging ? "grabbing" : "grab",
                             boxShadow: isDragging
                               ? "0 0 0 3px rgba(250,84,28,0.25)"
                               : "0 0 0 2px rgba(255,255,255,0.8)",

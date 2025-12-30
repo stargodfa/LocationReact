@@ -13,26 +13,60 @@ type IngestibleService = {
   ingestFrame: (msg: any) => boolean;
 };
 
+type BindableSender = {
+  bindSender?: (fn: (msg: any) => void) => void;
+};
+
 export default class WebSocketService implements IWebSocketService {
   private ws: WebSocket | null = null;
   private reconnectTimer: number | null = null;
   private listeners = new Set<(s: WSStatus) => void>();
 
+  private boundOnce = false;
+
   // 依赖的业务服务（都应该提供 ingestFrame）
-  private ble = 
-            getServiceSync<IBluetoothDataService>(EService.IBluetoothDataService) as unknown as IngestibleService;
-  private anchors = 
-            getServiceSync<IBeaconPositionService>(EService.IBeaconPositionService) as unknown as IngestibleService;
-  private locate = 
-            getServiceSync<ILocateResultService>(EService.ILocateResultService) as unknown as IngestibleService;
-  private maps = 
-            getServiceSync<IMapService>(EService.IMapService) as unknown as IngestibleService;
-  private mapConfig = 
-            getServiceSync<IMapConfigService>(EService.IMapConfigService) as unknown as IngestibleService;
-  private beaconList = 
-            getServiceSync<IBeaconListService>(EService.IBeaconListService) as unknown as IngestibleService;
+  private ble =
+    getServiceSync<IBluetoothDataService>(
+      EService.IBluetoothDataService
+    ) as unknown as IngestibleService;
+
+  private anchors =
+    getServiceSync<IBeaconPositionService>(
+      EService.IBeaconPositionService
+    ) as unknown as IngestibleService;
+
+  private locate =
+    getServiceSync<ILocateResultService>(
+      EService.ILocateResultService
+    ) as unknown as IngestibleService;
+
+  private maps =
+    getServiceSync<IMapService>(EService.IMapService) as unknown as IngestibleService;
+
+  // 这里拿到真实实例，既能 ingestFrame，也能 bindSender
+  private mapConfigRaw =
+    getServiceSync<IMapConfigService>(EService.IMapConfigService) as unknown as
+      IngestibleService &
+      BindableSender;
+
+  private mapConfig = this.mapConfigRaw as IngestibleService;
+
+  private beaconList =
+    getServiceSync<IBeaconListService>(
+      EService.IBeaconListService
+    ) as unknown as IngestibleService;
 
   start(): void {
+    // 关键：只绑定一次，把 WS 的 send 注入给 MapConfigService
+    if (!this.boundOnce) {
+      this.boundOnce = true;
+      if (typeof this.mapConfigRaw.bindSender === "function") {
+        this.mapConfigRaw.bindSender((obj) => this.send(obj));
+      } else {
+        console.warn("[WS] mapConfig has no bindSender(), cannot send MapScale to server");
+      }
+    }
+
     this.connect();
   }
 
@@ -129,10 +163,8 @@ export default class WebSocketService implements IWebSocketService {
       return;
     }
 
-    // 可选：调试时打开，生产建议关闭或采样
     console.log("[WS] recv:", msg);
 
-    // 广播到各业务服务，由它们自己判断 cmd/结构并更新状态
     const services: IngestibleService[] = [
       this.maps,
       this.mapConfig,
@@ -152,7 +184,6 @@ export default class WebSocketService implements IWebSocketService {
     }
 
     if (!handled) {
-      // 只在未知消息时打印，避免刷屏
       console.debug("[WS] unknown message:", msg);
     }
   }
