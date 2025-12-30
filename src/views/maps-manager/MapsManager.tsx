@@ -47,13 +47,15 @@ interface MapItem {
 }
 
 type CalibPoint = {
-  // wrap 内的渲染坐标（px）
   rx: number;
   ry: number;
-  // 原图像素坐标（natural image px）
   ix: number;
   iy: number;
 };
+
+type XY = { x: number; y: number };
+
+const round2 = (v: number) => Math.round(v * 100) / 100;
 
 /* ================= 组件 ================= */
 
@@ -86,6 +88,18 @@ const MapsManager: React.FC = () => {
   const [calibModalOpen, setCalibModalOpen] = useState(false);
   const [calibMeters, setCalibMeters] = useState<number>(1);
   const [calibPixelDist, setCalibPixelDist] = useState<number>(0);
+
+  /* -------- 拖拽锚点（实时更新） -------- */
+  const [draggingMac, setDraggingMac] = useState<string | null>(null);
+  const [dragPreview, setDragPreview] = useState<Record<string, XY>>({});
+
+  const dragRef = useRef<{
+    mac: string | null;
+    pointerId: number | null;
+    raf: number | null;
+    pending: XY | null;
+    lastSent: XY | null;
+  }>({ mac: null, pointerId: null, raf: null, pending: null, lastSent: null });
 
   /* ================= 地图列表 ================= */
   useEffect(() => {
@@ -150,12 +164,12 @@ const MapsManager: React.FC = () => {
   /* ================= Anchor 同步 ================= */
   useEffect(() => {
     setAnchorList(Object.values(beaconPositionService.getState().anchors));
-    return beaconPositionService.subscribe((s) =>
-      setAnchorList(Object.values(s.anchors))
-    );
+    return beaconPositionService.subscribe((s) => {
+      setAnchorList(Object.values(s.anchors));
+    });
   }, []);
 
-  /* ================= Beacon MAC 列表（来自服务器 maclist） ================= */
+  /* ================= Beacon MAC 列表（来自 WS BeaconList） ================= */
   useEffect(() => {
     setBeaconMacList(beaconListService.getState().macList);
 
@@ -163,7 +177,8 @@ const MapsManager: React.FC = () => {
       setBeaconMacList(s.macList);
     });
 
-    beaconListService.refresh().catch(() => {});
+    // 重要：移除 refresh() 的 HTTP 拉取，避免 404（你这里 WS 已经会推送 BeaconList）
+    // beaconListService.refresh().catch(() => {});
 
     return unsub;
   }, []);
@@ -192,24 +207,28 @@ const MapsManager: React.FC = () => {
   };
 
   const handleClearAll = () => {
+    setDragPreview({});
     beaconPositionService.clearAll();
   };
 
   const handleImportDefaultAnchors = () => {
+    setDragPreview({});
     beaconPositionService.setDefaultCoords();
   };
 
   const handleUseRecordAnchors = () => {
+    setDragPreview({});
     beaconPositionService.getAllCoords();
   };
 
-  /* ================= 布局：左右独立容器（不使用栅格） ================= */
+  /* ================= 布局：左右独立容器 ================= */
   const wsNotReady = mapList.length === 0;
   const leftWidthPx = wsNotReady ? 400 : 400;
 
   /* ================= 比例标定：进入/退出 ================= */
   const startCalibrate = () => {
     if (!mapSrc) return;
+    endDrag(); // 标定时禁用拖拽
     setCalibMode(true);
     setCalibPoints([]);
     setCalibModalOpen(false);
@@ -232,7 +251,6 @@ const MapsManager: React.FC = () => {
     const wrap = wrapRef.current;
     if (!wrap) return;
 
-    // 必须已经计算出布局
     if (renderSize.width <= 0 || renderSize.height <= 0) return;
     if (scale.sx <= 0 || scale.sy <= 0) return;
 
@@ -240,7 +258,6 @@ const MapsManager: React.FC = () => {
     const rx = e.clientX - rect.left;
     const ry = e.clientY - rect.top;
 
-    // 只允许点在图片实际显示区域内（排除 contain 留白）
     const inImg =
       rx >= offset.left &&
       rx <= offset.left + renderSize.width &&
@@ -249,7 +266,6 @@ const MapsManager: React.FC = () => {
 
     if (!inImg) return;
 
-    // 转换到原图像素坐标（top-left 原点）
     const ix = (rx - offset.left) / scale.sx;
     const iy = (ry - offset.top) / scale.sy;
 
@@ -276,11 +292,7 @@ const MapsManager: React.FC = () => {
     if (!calibMeters || calibMeters <= 0) return;
     if (!calibPixelDist || calibPixelDist <= 0) return;
 
-    const newM2P = calibPixelDist / calibMeters;
-
-    // 保留两位小数，避免 UI 抖动
-    const fixed = Number(newM2P.toFixed(2));
-
+    const fixed = Number((calibPixelDist / calibMeters).toFixed(2));
     setMeterToPixel(fixed);
     mapConfigService.setMeterToPixel(fixed);
 
@@ -289,30 +301,156 @@ const MapsManager: React.FC = () => {
     setCalibPoints([]);
   };
 
+  /* ================= 拖拽：坐标换算（client -> meters） ================= */
+  const clientToMeters = (clientX: number, clientY: number): XY | null => {
+    const wrap = wrapRef.current;
+    if (!wrap) return null;
+
+    if (renderSize.width <= 0 || renderSize.height <= 0) return null;
+    if (scale.sx <= 0 || scale.sy <= 0) return null;
+    if (!meterToPixel || meterToPixel <= 0) return null;
+
+    const rect = wrap.getBoundingClientRect();
+    let rx = clientX - rect.left;
+    let ry = clientY - rect.top;
+
+    const minX = offset.left;
+    const maxX = offset.left + renderSize.width;
+    const minY = offset.top;
+    const maxY = offset.top + renderSize.height;
+
+    if (rx < minX) rx = minX;
+    if (rx > maxX) rx = maxX;
+    if (ry < minY) ry = minY;
+    if (ry > maxY) ry = maxY;
+
+    const mx = (rx - offset.left) / (scale.sx * meterToPixel);
+    const my =
+      (renderSize.height - (ry - offset.top)) / (scale.sy * meterToPixel);
+
+    return { x: round2(mx), y: round2(my) };
+  };
+
+  const flushDragSend = () => {
+    const st = dragRef.current;
+    st.raf = null;
+    if (!st.mac || !st.pending) return;
+
+    const mac = st.mac;
+    const { x, y } = st.pending;
+
+    if (st.lastSent && st.lastSent.x === x && st.lastSent.y === y) return;
+    st.lastSent = { x, y };
+
+    setDragPreview((prev) => ({ ...prev, [mac]: { x, y } }));
+    beaconPositionService.setCoord(mac, x, y);
+  };
+
+  const scheduleDragSend = (mac: string, xy: XY) => {
+    const st = dragRef.current;
+    st.mac = mac;
+    st.pending = xy;
+    if (st.raf != null) return;
+    st.raf = window.requestAnimationFrame(flushDragSend);
+  };
+
+  const onDragMove = (ev: PointerEvent) => {
+    const mac = dragRef.current.mac;
+    if (!mac) return;
+    const xy = clientToMeters(ev.clientX, ev.clientY);
+    if (!xy) return;
+    scheduleDragSend(mac, xy);
+  };
+
+  const onDragUp = (ev: PointerEvent) => {
+    const mac = dragRef.current.mac;
+
+    if (mac) {
+      const xy = clientToMeters(ev.clientX, ev.clientY);
+      if (xy) {
+        dragRef.current.pending = xy;
+        flushDragSend();
+      }
+    }
+    endDrag();
+  };
+
+  function endDrag() {
+    const st = dragRef.current;
+    const mac = st.mac; // 先记住，后面要删预览
+
+    if (st.raf != null) {
+      cancelAnimationFrame(st.raf);
+      st.raf = null;
+    }
+
+    st.pending = null;
+    st.lastSent = null;
+    st.mac = null;
+    st.pointerId = null;
+
+    setDraggingMac(null);
+
+    // 关键：松开就清掉预览覆盖，避免后续“导入默认描点”UI不变化
+    if (mac) {
+      setDragPreview((prev) => {
+        const next = { ...prev };
+        delete next[mac];
+        return next;
+      });
+    }
+
+    window.removeEventListener("pointermove", onDragMove);
+    window.removeEventListener("pointerup", onDragUp, true);
+    window.removeEventListener("pointercancel", onDragUp, true);
+  }
+
+  useEffect(() => {
+    return () => endDrag();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const startDrag = (mac: string) => (e: React.PointerEvent<HTMLDivElement>) => {
+    if (calibMode) return;
+    if (!mapSrc) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    // 关键：捕获指针，保证 pointerup 不丢
+    e.currentTarget.setPointerCapture(e.pointerId);
+
+    setDraggingMac(mac);
+
+    dragRef.current.mac = mac;
+    dragRef.current.pointerId = e.pointerId;
+    dragRef.current.pending = null;
+    dragRef.current.lastSent = null;
+
+    window.addEventListener("pointermove", onDragMove);
+    window.addEventListener("pointerup", onDragUp, true);
+    window.addEventListener("pointercancel", onDragUp, true);
+  };
+
   /* ================= 渲染 ================= */
   return (
     <div style={{ padding: "0 16px 16px" }}>
       <style>{`
-        .mm-layout {
-          display: flex;
-          gap: 16px;
-          align-items: stretch;
-        }
-        .mm-left {
-          flex: 0 0 var(--mm-left-width);
-          width: var(--mm-left-width);
-          max-width: var(--mm-left-width);
-        }
-        .mm-right {
-          flex: 1 1 auto;
-          min-width: 0;
-        }
+        .mm-layout { display:flex; gap:16px; align-items:stretch; }
+        .mm-left { flex:0 0 var(--mm-left-width); width:var(--mm-left-width); max-width:var(--mm-left-width); }
+        .mm-right { flex:1 1 auto; min-width:0; }
         @media (max-width: 992px) {
           .mm-layout { flex-direction: column; }
           .mm-left { width: 100%; max-width: none; flex: 0 0 auto; }
           .mm-right { width: 100%; }
         }
+
+        /* 关键：下拉弹层最小宽度 */
+        .mm-beacon-popup {
+          min-width: 180px;
+        }
       `}</style>
+
 
       <Title level={4}>画面二 · 地图管理</Title>
 
@@ -320,7 +458,7 @@ const MapsManager: React.FC = () => {
         className="mm-layout"
         style={{ ["--mm-left-width" as any]: `${leftWidthPx}px` }}
       >
-        {/* 左侧独立容器 */}
+        {/* 左侧 */}
         <div className="mm-left">
           <Card title="房间地图选择" size="small" style={{ marginBottom: 16 }}>
             <Select
@@ -339,7 +477,7 @@ const MapsManager: React.FC = () => {
           </Card>
 
           <Card title="地图比例设置" size="small" style={{ marginBottom: 16 }}>
-            <Space direction="vertical" style={{ width: "100%" }}>
+            <Space orientation="vertical" style={{ width: "100%" }}>
               <Text>1 米 = 像素</Text>
 
               <Space style={{ width: "100%" }}>
@@ -350,24 +488,25 @@ const MapsManager: React.FC = () => {
                   onBlur={() => mapConfigService.setMeterToPixel(meterToPixel)}
                   style={{ flex: 1 }}
                 />
-                <Button
-                  onClick={startCalibrate}
-                  disabled={!mapSrc}
-                >
+                <Button onClick={startCalibrate} disabled={!mapSrc}>
                   标定地图比例
                 </Button>
               </Space>
 
-              {calibMode && (
+              {calibMode ? (
                 <Text type="warning" style={{ fontSize: 12 }}>
-                  标定模式：请在地图上点击两点，然后输入两点的实际距离（米）。
+                  标定模式：点击两点输入米数。拖拽锚点已禁用。
+                </Text>
+              ) : (
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  提示：按住红点拖动，松开即保存并实时上报。
                 </Text>
               )}
             </Space>
           </Card>
 
           <Card title="Beacon 坐标设定" size="small">
-            <Space direction="vertical" style={{ width: "100%" }}>
+            <Space orientation="vertical" style={{ width: "100%" }}>
               <Space style={{ width: "100%" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <Select
@@ -377,7 +516,7 @@ const MapsManager: React.FC = () => {
                     disabled={beaconMacList.length === 0}
                     style={{ width: "100%" }}
                     popupMatchSelectWidth={false as any}
-                    dropdownStyle={{ minWidth: 180 }}
+                    classNames={{ popup: { root: "mm-beacon-popup" } }}
                     optionLabelProp="value"
                   >
                     {beaconMacList.map((mac) => (
@@ -425,7 +564,7 @@ const MapsManager: React.FC = () => {
           </Card>
         </div>
 
-        {/* 右侧独立容器 */}
+        {/* 右侧地图 */}
         <div className="mm-right">
           <Card
             title="地图预览"
@@ -436,6 +575,10 @@ const MapsManager: React.FC = () => {
                   <Button onClick={() => setCalibPoints([])}>重选两点</Button>
                   <Button danger onClick={cancelCalibrate}>退出标定</Button>
                 </Space>
+              ) : draggingMac ? (
+                <Text type="warning" style={{ fontSize: 12 }}>
+                  正在拖拽：{draggingMac}
+                </Text>
               ) : null
             }
           >
@@ -450,7 +593,7 @@ const MapsManager: React.FC = () => {
                 overflow: "hidden",
                 border: "1px solid #ddd",
                 background: "#fff",
-                cursor: calibMode ? "crosshair" : "default",
+                cursor: calibMode ? "crosshair" : draggingMac ? "grabbing" : "default",
               }}
             >
               {mapSrc ? (
@@ -468,10 +611,9 @@ const MapsManager: React.FC = () => {
                     }}
                   />
 
-                  {/* ====== 标定点与连线（仅在标定模式显示） ====== */}
+                  {/* 标定点与连线 */}
                   {calibMode && (
                     <>
-                      {/* 连线 */}
                       {calibPoints.length === 2 && (
                         <svg
                           style={{
@@ -491,7 +633,6 @@ const MapsManager: React.FC = () => {
                         </svg>
                       )}
 
-                      {/* 点 */}
                       {calibPoints.map((p, i) => (
                         <React.Fragment key={i}>
                           <div
@@ -501,7 +642,8 @@ const MapsManager: React.FC = () => {
                               top: p.ry,
                               width: 12,
                               height: 12,
-                              background: i === 0 ? "rgba(0,0,255,0.9)" : "rgba(0,0,255,0.6)",
+                              background:
+                                i === 0 ? "rgba(0,0,255,0.9)" : "rgba(0,0,255,0.6)",
                               borderRadius: "50%",
                               transform: "translate(-50%, -50%)",
                               pointerEvents: "none",
@@ -518,7 +660,6 @@ const MapsManager: React.FC = () => {
                               padding: "1px 6px",
                               borderRadius: 4,
                               whiteSpace: "nowrap",
-                              transform: "translate(0, 0)",
                               pointerEvents: "none",
                               border: "1px solid rgba(0,0,0,0.08)",
                             }}
@@ -530,34 +671,51 @@ const MapsManager: React.FC = () => {
                     </>
                   )}
 
-                  {/* ====== Anchor 点（设置 pointerEvents:none，避免干扰标定点击） ====== */}
-                  {anchorList.map((a, idx) => {
-                    const px = offset.left + a.x * scale.sx * meterToPixel;
+                  {/* 可拖拽锚点 */}
+                  {anchorList.map((a) => {
+                    const p = dragPreview[a.mac];
+                    const ax = p ? p.x : a.x;
+                    const ay = p ? p.y : a.y;
+
+                    const px = offset.left + ax * scale.sx * meterToPixel;
                     const py =
                       offset.top +
                       renderSize.height -
-                      a.y * scale.sy * meterToPixel;
+                      ay * scale.sy * meterToPixel;
+
+                    const isDragging = draggingMac === a.mac;
 
                     return (
-                      <React.Fragment key={idx}>
+                      <React.Fragment key={a.mac}>
                         <div
+                          onPointerDown={startDrag(a.mac)}
                           style={{
                             position: "absolute",
                             left: px,
                             top: py,
-                            width: 10,
-                            height: 10,
-                            background: "red",
+                            width: 14,
+                            height: 14,
+                            background: isDragging ? "#fa541c" : "red",
                             borderRadius: "50%",
                             transform: "translate(-50%, -50%)",
-                            pointerEvents: "none",
+                            cursor: calibMode
+                              ? "not-allowed"
+                              : isDragging
+                              ? "grabbing"
+                              : "grab",
+                            boxShadow: isDragging
+                              ? "0 0 0 3px rgba(250,84,28,0.25)"
+                              : "0 0 0 2px rgba(255,255,255,0.8)",
+                            zIndex: isDragging ? 5 : 2,
+                            pointerEvents: calibMode ? "none" : "auto",
                           }}
+                          title={`拖拽 ${a.mac}`}
                         />
                         {showMac && (
                           <div
                             style={{
                               position: "absolute",
-                              left: px + 50,
+                              left: px + 55,
                               top: py - 15,
                               fontSize: 12,
                               background: "rgba(255,255,255,0.7)",
@@ -566,9 +724,10 @@ const MapsManager: React.FC = () => {
                               whiteSpace: "nowrap",
                               transform: "translate(-50%, -50%)",
                               pointerEvents: "none",
+                              zIndex: isDragging ? 5 : 2,
                             }}
                           >
-                            {a.mac}
+                            {a.mac} ({ax.toFixed(2)}, {ay.toFixed(2)})
                           </div>
                         )}
                       </React.Fragment>
@@ -583,7 +742,7 @@ const MapsManager: React.FC = () => {
         </div>
       </div>
 
-      {/* ===== 标定确认对话框 ===== */}
+      {/* 标定确认对话框 */}
       <Modal
         title="设置地图比例"
         open={calibModalOpen}
@@ -591,9 +750,9 @@ const MapsManager: React.FC = () => {
         onOk={confirmCalibrate}
         okText="确认并更新比例"
         cancelText="取消"
-        destroyOnClose
+        destroyOnHidden
       >
-        <Space direction="vertical" style={{ width: "100%" }}>
+        <Space orientation="vertical" style={{ width: "100%" }}>
           <Text>已选择两点。</Text>
           <Text type="secondary">
             两点像素距离（原图 px）：{calibPixelDist ? calibPixelDist.toFixed(2) : "-"}
@@ -614,9 +773,7 @@ const MapsManager: React.FC = () => {
           </Text>
 
           {calibMeters > 0 && calibPixelDist > 0 && (
-            <Text>
-              预览结果：1 米 ≈ {(calibPixelDist / calibMeters).toFixed(2)} px
-            </Text>
+            <Text>预览结果：1 米 ≈ {(calibPixelDist / calibMeters).toFixed(2)} px</Text>
           )}
         </Space>
       </Modal>
