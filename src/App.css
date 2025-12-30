@@ -1,42 +1,157 @@
+/* src/App.css
+ *
+ * 这个文件基本是 Vite + React 模板自带的演示样式。
+ * 你现在的 App.tsx 已经是“工作台/三画面切换”结构，
+ * 这些样式多数会对业务页面产生副作用，尤其是 #root 的 max-width 与居中。
+ *
+ * 数据来源与流向：
+ * - 数据来源：静态 CSS 常量 + 用户系统偏好(prefers-reduced-motion)
+ * - 流向：全局选择器命中对应 DOM 元素后生效
+ */
+
+/* =========================
+ * #root 根节点样式
+ * =========================
+ * #root 是 index.html 里的 React 挂载点：
+ * <div id="root"></div>
+ *
+ * 这段样式会把整个应用限制在 1280px 宽并居中，
+ * 对“全屏地图/实时表/定位大屏”通常是不合适的。
+ */
 #root {
+  /* max-width：
+   * 限制 #root 最大宽度为 1280px
+   * 数据来源：写死 1280px
+   * 用途：模板 demo 居中展示
+   * 流向：影响整个 React 应用容器宽度
+   */
   max-width: 1280px;
+
+  /* margin: 0 auto：
+   * 左右自动外边距，使 #root 在页面水平居中
+   * 数据来源：写死
+   * 用途：模板 demo 居中
+   * 流向：影响 #root 的布局位置
+   */
   margin: 0 auto;
+
+  /* padding：
+   * 为 #root 内部内容提供 2rem 内边距
+   * 数据来源：写死 2rem
+   * 用途：模板 demo 留白
+   * 流向：影响整个应用内容距离边缘的空白
+   */
   padding: 2rem;
+
+  /* text-align：
+   * 文本居中
+   * 数据来源：center
+   * 用途：模板 demo 的标题/按钮居中显示
+   * 流向：会被所有子元素继承（除非子元素覆盖）
+   * 影响：业务系统里可能导致表格/表单/地图容器文字对齐异常
+   */
   text-align: center;
 }
 
+/* =========================
+ * .logo：模板 demo 的 logo 图片样式
+ * =========================
+ * 通常对应 <img class="logo" ... />
+ * 你的业务 App.tsx 当前没有使用这些类名，属于“遗留模板样式”。
+ */
 .logo {
+  /* height：logo 图片高度 */
   height: 6em;
+
+  /* padding：logo 周围留白 */
   padding: 1.5em;
+
+  /* will-change：
+   * 提前告诉浏览器这个元素的 filter 可能变化
+   * 数据来源：filter
+   * 用途：优化 hover 动画渲染（可能促使浏览器做合成层优化）
+   * 流向：渲染优化提示，不改变视觉
+   */
   will-change: filter;
+
+  /* transition：
+   * filter 属性变化时 300ms 过渡
+   * 用途：hover 阴影渐变更平滑
+   */
   transition: filter 300ms;
 }
+
+/* logo hover：加投影 */
 .logo:hover {
+  /* filter: drop-shadow：
+   * 数据来源：0 0 2em #646cffaa（带透明的蓝紫色）
+   * 用途：鼠标悬停突出 logo
+   * 流向：hover 状态下的 .logo 元素
+   */
   filter: drop-shadow(0 0 2em #646cffaa);
 }
+
+/* React logo hover：不同颜色投影 */
 .logo.react:hover {
   filter: drop-shadow(0 0 2em #61dafbaa);
 }
 
+/* =========================
+ * @keyframes logo-spin
+ * =========================
+ * 定义一个名为 logo-spin 的旋转动画。
+ * 数据来源：from/to 两段 transform
+ * 流向：只有被 animation 引用的元素才会执行该动画
+ */
 @keyframes logo-spin {
   from {
+    /* 初始角度 */
     transform: rotate(0deg);
   }
   to {
+    /* 旋转一圈 */
     transform: rotate(360deg);
   }
 }
 
+/* =========================
+ * prefers-reduced-motion
+ * =========================
+ * 数据来源：用户操作系统的“减少动态效果”设置。
+ * - no-preference：表示用户没有要求减少动画
+ * 命中时才给某些 logo 加旋转动画。
+ */
 @media (prefers-reduced-motion: no-preference) {
+  /* a:nth-of-type(2) .logo：
+   * 选择“第二个 <a> 元素内部的 .logo”
+   * 这完全是模板 demo 的 DOM 结构依赖。
+   * 业务页面通常不应依赖这种选择器。
+   */
   a:nth-of-type(2) .logo {
+    /* animation：
+     * infinite：无限循环
+     * 20s：周期 20 秒
+     * linear：匀速
+     * 数据流：logo-spin keyframes -> animation 应用到元素
+     */
     animation: logo-spin infinite 20s linear;
   }
 }
 
+/* =========================
+ * .card：模板 demo 的卡片留白
+ * =========================
+ * 通常对应 <div class="card">...</div>
+ */
 .card {
+  /* padding：2em 内边距 */
   padding: 2em;
 }
 
+/* =========================
+ * .read-the-docs：模板 demo 的说明文字颜色
+ * ========================= */
 .read-the-docs {
+  /* color：灰色文字 */
   color: #888;
 }

@@ -1,67 +1,286 @@
+/* src/index.css
+ *
+ * 这个文件的职责：
+ * 1) 提供 Vite/React 默认模板的“全局基础样式”。
+ * 2) 设定全局字体、排版、默认颜色、暗黑模式适配。
+ * 3) 给 <a>、<button>、<body>、<h1> 等常用元素设置默认外观。
+ *
+ * 数据来源与流向：
+ * - 数据来源：浏览器默认样式 + 系统字体栈 + 用户系统主题偏好(prefs-color-scheme)
+ * - 流向：通过 CSS 选择器作用到整个 DOM（全局生效），影响所有页面组件。
+ *
+ * 注意：
+ * - 你已经在 main.tsx 引入了 antd/dist/reset.css，它会重置大量默认样式。
+ *   本文件是“重置之后”的补充默认值。
+ * - 这里的 body 样式会把页面内容居中（display:flex + place-items:center），
+ *   对于业务系统后台类页面通常不合适，会导致布局被强行居中。
+ */
+
+/* =========================
+ * :root
+ * =========================
+ * :root 选择器等价于 html 元素，但优先级更明确。
+ * 一般用来定义全局 CSS 变量和全局基础排版设置。
+ */
 :root {
+  /* font-family：
+   * 全局默认字体栈（数据来源：操作系统内置字体 + 浏览器 fallback）。
+   * 流向：所有未显式设置 font-family 的元素继承此值。
+   *
+   * system-ui：使用系统 UI 字体（Windows: Segoe UI，macOS: SF，Linux: 视发行版）
+   * Avenir/Helvetica/Arial：常见西文字体回退
+   * sans-serif：最终兜底
+   */
   font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+
+  /* line-height：
+   * 全局行高倍数。
+   * 数据来源：写死为 1.5。
+   * 流向：文本元素继承，提高可读性。
+   */
   line-height: 1.5;
+
+  /* font-weight：
+   * 全局默认字重。
+   * 数据来源：写死为 400（Regular）。
+   * 流向：所有未设置 font-weight 的文字继承。
+   */
   font-weight: 400;
 
+  /* color-scheme：
+   * 告诉浏览器本页面同时支持 light 和 dark 两种配色方案。
+   * 数据来源：写死为 light dark。
+   * 用途：
+   * - 影响表单控件、滚动条等“浏览器原生 UI”的默认配色。
+   * - 配合 @media (prefers-color-scheme) 做主题切换。
+   * 流向：浏览器渲染引擎使用该声明决定原生控件配色。
+   */
   color-scheme: light dark;
+
+  /* color：
+   * 根元素默认文字颜色（会被继承）。
+   * 数据来源：rgba(255,255,255,0.87) 表示白色略透明。
+   * 用途：暗色背景下的默认可读文字色。
+   * 流向：所有继承 color 的元素默认使用此色（除非组件/antd 覆盖）。
+   */
   color: rgba(255, 255, 255, 0.87);
+
+  /* background-color：
+   * 根元素默认背景色。
+   * 数据来源：#242424（深灰）。
+   * 用途：暗色主题页面背景。
+   * 流向：通常影响 html 背景，body 未设置背景时也会透出该颜色。
+   */
   background-color: #242424;
 
+  /* font-synthesis：
+   * 控制浏览器是否允许“合成”粗体/斜体（当字体文件缺少对应字形时）。
+   * 数据来源：none。
+   * 用途：避免浏览器伪造粗体/斜体导致字形难看或度量变化。
+   * 流向：字体渲染阶段生效。
+   */
   font-synthesis: none;
+
+  /* text-rendering：
+   * 文本渲染策略提示。
+   * optimizeLegibility 会启用更高级的字距调整、连字等（不同浏览器实现不同）。
+   * 数据来源：optimizeLegibility。
+   * 用途：提高大字号文本观感，但可能略增加渲染成本。
+   * 流向：字体排版渲染阶段生效。
+   */
   text-rendering: optimizeLegibility;
+
+  /* -webkit-font-smoothing / -moz-osx-font-smoothing：
+   * 针对 WebKit 和 macOS 的字体抗锯齿设置。
+   * 数据来源：antialiased / grayscale。
+   * 用途：让字体显示更平滑。
+   * 流向：仅影响特定浏览器/平台的渲染表现。
+   */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* =========================
+ * a 链接样式
+ * =========================
+ * 作用范围：所有 <a> 标签（除非被组件库或局部样式覆盖）。
+ */
 a {
+  /* font-weight：
+   * 链接字重加粗一点。
+   * 数据来源：500。
+   * 用途：让链接更显眼。
+   * 流向：仅 <a> 元素自身使用。
+   */
   font-weight: 500;
+
+  /* color：
+   * 链接颜色。
+   * 数据来源：#646cff（偏蓝紫）。
+   * 用途：链接可识别。
+   * 流向：<a> 元素自身。
+   */
   color: #646cff;
+
+  /* text-decoration：
+   * inherit 表示继承父元素的 text-decoration。
+   * 通常父元素没有 underline，所以等效于“去掉默认下划线”。
+   * 数据来源：inherit。
+   * 用途：控制链接不自动带下划线。
+   * 流向：<a> 元素自身。
+   */
   text-decoration: inherit;
 }
+
+/* a:hover：
+ * 鼠标悬停时链接颜色变化。
+ * 数据来源：#535bf2。
+ * 用途：交互反馈。
+ * 流向：hover 状态下的 <a>。
+ */
 a:hover {
   color: #535bf2;
 }
 
+/* =========================
+ * body 布局
+ * =========================
+ * 这段是 Vite 模板的典型“居中展示”布局。
+ * 对后台管理系统通常不建议保留，因为会把整个 App 强制居中。
+ */
 body {
+  /* margin:0：
+   * 去掉浏览器默认 body 外边距（数据来源：写死 0）。
+   * 用途：让页面从窗口边缘开始绘制，避免默认留白。
+   */
   margin: 0;
+
+  /* display:flex：
+   * body 变为 flex 容器（数据来源：写死 flex）。
+   * 用途：配合 place-items 做居中对齐。
+   * 流向：body 的直接子元素（通常是 #root）将作为 flex item。
+   */
   display: flex;
+
+  /* place-items:center：
+   * 是 align-items + justify-items 的简写。
+   * 对 flex 来说 align-items 生效，justify-items 对 flex 一般不生效。
+   * 数据来源：center。
+   * 用途：让子元素在交叉轴居中。
+   *
+   * 备注：
+   * - 如果你希望 #root 全屏铺开，这里应改为：
+   *   align-items: stretch; 或直接去掉 display:flex / place-items。
+   */
   place-items: center;
+
+  /* min-width / min-height：
+   * 最小宽度 320px，最小高度 100vh。
+   * 数据来源：写死。
+   * 用途：保证移动端最小宽度，保证 body 至少占满一屏高度。
+   * 流向：影响 body 自身尺寸，从而影响布局计算。
+   */
   min-width: 320px;
   min-height: 100vh;
 }
 
+/* =========================
+ * h1 标题
+ * ========================= */
 h1 {
+  /* font-size：3.2em
+   * em 相对当前元素继承的 font-size。
+   * 数据来源：写死 3.2em。
+   * 用途：模板 demo 的大标题。
+   * 流向：所有 h1。
+   */
   font-size: 3.2em;
+
+  /* line-height：1.1
+   * 标题行高更紧凑。
+   * 数据来源：写死 1.1。
+   * 流向：h1。
+   */
   line-height: 1.1;
 }
 
+/* =========================
+ * button 默认样式
+ * =========================
+ * 注意：如果你主要用 antd Button，这些可能不会生效或会被覆盖。
+ */
 button {
+  /* border-radius：圆角 */
   border-radius: 8px;
+
+  /* border：透明边框
+   * 数据来源：1px solid transparent。
+   * 用途：
+   * - hover 时只改变 border-color，不会引起布局抖动（边框宽度始终存在）。
+   */
   border: 1px solid transparent;
+
+  /* padding：内边距 */
   padding: 0.6em 1.2em;
+
+  /* font-size/font-weight/font-family：
+   * 继承全局字体，仅调整字重与字号。
+   */
   font-size: 1em;
   font-weight: 500;
   font-family: inherit;
+
+  /* background-color：
+   * 按暗色主题设定按钮背景。
+   */
   background-color: #1a1a1a;
+
+  /* cursor：
+   * 鼠标样式变为手型，提示可点击。
+   */
   cursor: pointer;
+
+  /* transition：
+   * 边框颜色过渡动画 0.25s。
+   * 数据来源：写死。
+   * 用途：hover 反馈更平滑。
+   */
   transition: border-color 0.25s;
 }
+
+/* hover：高亮边框颜色 */
 button:hover {
   border-color: #646cff;
 }
+
+/* focus/focus-visible：
+ * 键盘操作可访问性。
+ * outline: 4px auto -webkit-focus-ring-color 使用浏览器默认的 focus ring 颜色。
+ */
 button:focus,
 button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
 }
 
+/* =========================
+ * 根据系统主题偏好切换到浅色方案
+ * =========================
+ * prefers-color-scheme 数据来源：操作系统/浏览器设置（用户选择浅色或深色）。
+ * 流向：命中该 media query 时覆盖 :root/a/button 的部分属性。
+ */
 @media (prefers-color-scheme: light) {
   :root {
+    /* 浅色主题下的默认文字色和背景色 */
     color: #213547;
     background-color: #ffffff;
   }
+
+  /* 浅色主题下 hover 的链接颜色 */
   a:hover {
     color: #747bff;
   }
+
+  /* 浅色主题下按钮背景 */
   button {
     background-color: #f9f9f9;
   }
