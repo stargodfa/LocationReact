@@ -32,6 +32,14 @@ export default class MapConfigService implements IMapConfigService {
     }
 
     this.emit();
+
+    // 关键：切换地图时主动向服务端拉比例
+    if (this.sendFn) {
+      this.sendFn({
+        cmd: "GetMapScale",
+        map_id: mapId,
+      });
+    }
   }
 
   /* ================= public ================= */
@@ -61,15 +69,15 @@ export default class MapConfigService implements IMapConfigService {
   ingestFrame(msg: any): boolean {
     if (!msg || typeof msg !== "object") return false;
 
-    if (
-      msg.cmd === "MapScale" &&
-      typeof msg.map_id === "string" &&
-      typeof msg.meter_to_pixel === "number"
-    ) {
+    if (msg.cmd === "MapScale") {
+      const mapId = msg.map_id ?? msg.mapId;
+      if (typeof mapId !== "string") return true;
+      if (typeof msg.meter_to_pixel !== "number") return true;
+
       const fixed = this.normalize(msg.meter_to_pixel);
       if (fixed == null) return true;
 
-      this.setMeterToPixelLocal(msg.map_id, fixed);
+      this.setMeterToPixelLocal(mapId, fixed);
       return true;
     }
 

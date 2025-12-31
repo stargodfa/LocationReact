@@ -26,7 +26,7 @@ export default interface IBeaconPositionService {
 
   clearAll(): void;
 
-  getAllCoords(): BeaconCoord[];
+  getAllCoords(): void;
 
   setDefaultCoords(): void;
 

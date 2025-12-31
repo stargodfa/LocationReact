@@ -110,7 +110,7 @@ export default class BeaconPositionService
     });
   };
 
-  getAllCoords = (): BeaconCoord[] => {
+  getAllCoords = (): void => {
     const mapId = this.requireMapId();
 
     this.wsService.send({
@@ -118,25 +118,34 @@ export default class BeaconPositionService
       mapId,
     });
 
-    return Object.values(
-      this.getState().anchorsByMap[mapId] || {}
-    );
+    // return Object.values(
+    //   this.getState().anchorsByMap[mapId] || {}
+    // );
   };
 
   setDefaultCoords = (): void => {
     const mapId = this.requireMapId();
+    const state = this.getState();
+
+    // ① 先清空当前地图，避免 UI 停留旧点
+    this.setState({
+      anchorsByMap: {
+        ...state.anchorsByMap,
+        [mapId]: {},
+      },
+    });
+
+    // ② 通知服务器重置
     this.wsService.send({
       cmd: "SetDefaultBeaconPosition",
       mapId,
     });
   };
 
-  loadFromServer = (
-    mapId: string,
-    items: BeaconCoord[]
-  ): void => {
-    const next: Record<string, BeaconCoord> = {};
+  loadFromServer(mapId: string, items: BeaconCoord[]): void {
+    console.log("[BeaconPositionService] load", mapId, items);
 
+    const next: Record<string, BeaconCoord> = {};
     items.forEach((i) => {
       if (!i?.mac) return;
       next[i.mac] = { mac: i.mac, x: i.x, y: i.y };
@@ -149,18 +158,16 @@ export default class BeaconPositionService
         [mapId]: next,
       },
     });
-  };
+  }
+
 
   ingestFrame(msg: any): boolean {
-    if (
-      msg &&
-      msg.cmd === "BeaconPositions" &&
-      msg.mapId &&
-      Array.isArray(msg.items)
-    ) {
-      this.loadFromServer(msg.mapId, msg.items);
-      return true;
-    }
-    return false;
+    if (!msg || msg.cmd !== "BeaconPositions") return false;
+
+    const mapId = msg.mapId ?? msg.map_id;
+    if (!mapId || !Array.isArray(msg.items)) return false;
+
+    this.loadFromServer(mapId, msg.items);
+    return true;
   }
 }
