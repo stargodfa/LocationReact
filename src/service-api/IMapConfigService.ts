@@ -85,4 +85,7 @@ export default interface IMapConfigService {
    * - msg.meter_to_pixel 为 number
    */
   ingestFrame(msg: any): boolean;
+
+  // ★ 新增
+  syncCurrentMapScale(): void;
 }

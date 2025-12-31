@@ -81,6 +81,18 @@ export default class MapConfigService implements IMapConfigService {
 
     return false;
   }
+  
+  syncCurrentMapScale(): void {
+    const mapId = this.state.currentMapId;
+    if (!mapId) return;
+    if (!this.sendFn) return;
+
+    this.sendFn({
+      cmd: "GetMapScale",
+      mapId,
+    });
+  }
+
 
   /* ================= private ================= */
 

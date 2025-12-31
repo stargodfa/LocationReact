@@ -214,7 +214,7 @@ export default class WebSocketService implements IWebSocketService {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(data));
     } else {
-      console.warn("[WS] socket not open, skip send:", data);
+      // console.warn("[WS] socket not open, skip send:", data);
     }
   }
 

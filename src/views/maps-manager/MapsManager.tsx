@@ -170,6 +170,9 @@ type XY = { x: number; y: number };
  */
 const round2 = (v: number) => Math.round(v * 100) / 100;
 
+/* ===== 本画面 UI 持久化 key ===== */
+const UI_KEY = "ui.mapsManager.mapId";
+
 /* ================= 组件 ================= */
 
 const MapsManager: React.FC = () => {
@@ -194,7 +197,9 @@ const MapsManager: React.FC = () => {
    * - 用途：决定当前预览哪张地图
    * - 流向：useEffect([selectedMapId,mapList]) -> setmapScale
    */
-  const [selectedMapId, setSelectedMapId] = useState<string>();
+  const [selectedMapId, setSelectedMapId] = useState<string | undefined>(() => {
+    return localStorage.getItem(UI_KEY) || undefined;
+  });
 
   /**
    * mapScale：
@@ -404,6 +409,12 @@ const MapsManager: React.FC = () => {
     lastSent: XY | null;
   }>({ mac: null, pointerId: null, raf: null, pending: null, lastSent: null });
 
+  useEffect(() => {
+    if (selectedMapId) {
+      localStorage.setItem(UI_KEY, selectedMapId);
+    }
+  }, [selectedMapId]);
+
   /* ================= 地图列表（MapService -> mapList/selectedMapId） ================= */
   useEffect(() => {
     // 初始读取一次当前 state
@@ -453,6 +464,7 @@ const MapsManager: React.FC = () => {
 
     beaconPositionService.setCurrentMap(selectedMapId);
     mapConfigService.setCurrentMap(selectedMapId);
+    mapConfigService.syncCurrentMapScale(); // ★ 新增
 
     const map = mapList.find((m) => m.id === selectedMapId);
     if (!map) {
