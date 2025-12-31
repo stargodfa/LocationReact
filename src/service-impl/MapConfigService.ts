@@ -2,8 +2,6 @@ import IMapConfigService, {
   MapConfigState,
 } from "../service-api/IMapConfigService";
 
-const CMD_SET_MAP_SCALE = "SetMapScale";
-
 type SendFn = (msg: any) => void;
 
 export default class MapConfigService implements IMapConfigService {
@@ -37,7 +35,7 @@ export default class MapConfigService implements IMapConfigService {
     if (this.sendFn) {
       this.sendFn({
         cmd: "GetMapScale",
-        map_id: mapId,
+        mapId,
       });
     }
   }
@@ -104,8 +102,8 @@ export default class MapConfigService implements IMapConfigService {
     if (!this.sendFn) return;
 
     this.sendFn({
-      cmd: CMD_SET_MAP_SCALE,
-      map_id: mapId,
+      cmd: "SetMapScale",
+      mapId,
       meter_to_pixel: meterToPixel,
     });
   }

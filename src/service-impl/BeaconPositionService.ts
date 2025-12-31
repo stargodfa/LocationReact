@@ -87,7 +87,6 @@ export default class BeaconPositionService
 
     this.wsService.send({
       cmd: "ClearCurrentBeaconPosition",
-      map_id: mapId,
       mapId,
       mac,
     });
@@ -117,10 +116,6 @@ export default class BeaconPositionService
       cmd: "GetBeaconPositions",
       mapId,
     });
-
-    // return Object.values(
-    //   this.getState().anchorsByMap[mapId] || {}
-    // );
   };
 
   setDefaultCoords = (): void => {
@@ -159,7 +154,6 @@ export default class BeaconPositionService
       },
     });
   }
-
 
   ingestFrame(msg: any): boolean {
     if (!msg || msg.cmd !== "BeaconPositions") return false;
