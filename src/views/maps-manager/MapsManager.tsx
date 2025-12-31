@@ -431,19 +431,17 @@ const MapsManager: React.FC = () => {
 
   /* ================= 比例同步（MapConfigService -> meterToPixel） ================= */
   useEffect(() => {
-    // 初始读取
-    setMeterToPixel(mapConfigService.getState().meterToPixel);
+    const sync = () => {
+      const s = mapConfigService.getState();
+      if (!s.currentMapId) return;
+      const v = s.meterToPixelByMap[s.currentMapId];
+      if (typeof v === "number") {
+        setMeterToPixel(v);
+      }
+    };
 
-    /**
-     * 订阅比例变化：
-     * - 数据来源：mapConfigService state 更新（通常由 WS GetMapScale 或 setMeterToPixel 回写）
-     * - 用途：保证 UI 与后端/全局配置一致
-     * - 流向：setMeterToPixel -> clientToMeters/渲染锚点位置
-     */
-    const unsub = mapConfigService.subscribe((s) => {
-      setMeterToPixel(s.meterToPixel);
-    });
-    return unsub;
+    sync();
+    return mapConfigService.subscribe(sync);
   }, []);
 
   /* ================= 切换地图（selectedMapId + mapList -> mapScale URL） ================= */
@@ -454,6 +452,7 @@ const MapsManager: React.FC = () => {
     }
 
     beaconPositionService.setCurrentMap(selectedMapId);
+    mapConfigService.setCurrentMap(selectedMapId);
 
     const map = mapList.find((m) => m.id === selectedMapId);
     if (!map) {
@@ -591,7 +590,7 @@ const MapsManager: React.FC = () => {
     const fixed = Number(Number(v).toFixed(2)); // 固定两位小数
     if (!Number.isFinite(fixed) || fixed <= 0) return;
 
-    setMeterToPixel(fixed);             // UI 立即反映
+    // setMeterToPixel(fixed);             // UI 立即反映
     mapConfigService.setMeterToPixel(fixed); // 通过 service 上报/同步
   };
 
