@@ -87,9 +87,9 @@ export default class BeaconPositionService
 
     this.wsService.send({
       cmd: "ClearCurrentBeaconPosition",
+      map_id: mapId,
       mapId,
       mac,
-      scope: "manual",
     });
   };
 
