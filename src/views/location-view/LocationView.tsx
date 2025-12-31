@@ -1,4 +1,8 @@
-import React, { useState, useEffect, useRef } from "react";
+/**
+ * src/views/location-view/LocationView.tsx
+ */
+
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Card, Space, Typography, Select, Button } from "antd";
 
 import { getServiceSync } from "@spring4js/container-browser";
@@ -27,21 +31,27 @@ const HTTP_BASE = `http://${location.hostname}:8082`;
 const PREDICT_BOX_WIDTH = 20;
 const PREDICT_BOX_HEIGHT = 15;
 
-/* ===== 本画面 UI 持久化 key ===== */
 const UI_KEY = "ui.locationView.mapId";
 
 const LocationView: React.FC = () => {
   const [showMac, setShowMac] = useState(true);
 
+  /* ===== 地图 ===== */
   const [mapList, setMapList] = useState<any[]>([]);
   const [selectedMapId, setSelectedMapId] = useState<string | undefined>(() => {
     return localStorage.getItem(UI_KEY) || undefined;
   });
   const [mapSrc, setMapSrc] = useState("");
 
+  /* ===== 比例 ===== */
   const [meterToPixel, setMeterToPixel] = useState(300);
+
+  /* ===== 数据 ===== */
   const [anchors, setAnchors] = useState<any[]>([]);
   const [locPoints, setLocPoints] = useState<any[]>([]);
+
+  /* ===== 目标搜索 ===== */
+  const [selectedTargetMac, setSelectedTargetMac] = useState<string>();
 
   const mapImgRef = useRef<HTMLImageElement>(null);
   const mapWrapRef = useRef<HTMLDivElement>(null);
@@ -54,27 +64,25 @@ const LocationView: React.FC = () => {
     renderedH: 0,
   });
 
-  /* ===== Map list ===== */
+  /* ================= Map list ================= */
   useEffect(() => {
     setMapList(mapService.getState().maps);
-
     return mapService.subscribe((maps) => {
       setMapList(maps);
-
       if (!selectedMapId && maps.length > 0) {
         setSelectedMapId(maps[0].id);
       }
     });
   }, []);
 
-  /* ===== selectedMapId → localStorage ===== */
+  /* ================= 记忆当前地图 ================= */
   useEffect(() => {
     if (selectedMapId) {
       localStorage.setItem(UI_KEY, selectedMapId);
     }
   }, [selectedMapId]);
 
-  /* ===== 切换地图 ===== */
+  /* ================= 切换地图（手动） ================= */
   useEffect(() => {
     if (!selectedMapId) {
       setMapSrc("");
@@ -83,7 +91,6 @@ const LocationView: React.FC = () => {
 
     beaconPositionService.setCurrentMap(selectedMapId);
     mapConfigService.setCurrentMap(selectedMapId);
-    mapConfigService.syncCurrentMapScale(); // ★ 同样加
 
     const map = mapList.find((m) => m.id === selectedMapId);
     if (!map) {
@@ -94,7 +101,7 @@ const LocationView: React.FC = () => {
     setMapSrc(HTTP_BASE + map.url);
   }, [selectedMapId, mapList]);
 
-  /* ===== 比例 ===== */
+  /* ================= 比例同步 ================= */
   useEffect(() => {
     const sync = () => {
       const s = mapConfigService.getState();
@@ -106,32 +113,50 @@ const LocationView: React.FC = () => {
     return mapConfigService.subscribe(sync);
   }, [selectedMapId]);
 
-  /* ===== anchors ===== */
+  /* ================= anchors ================= */
   useEffect(() => {
     const sync = () => {
       const s = beaconPositionService.getState();
-      setAnchors(
-        Object.values(s.anchorsByMap?.[selectedMapId!] || {})
-      );
+      setAnchors(Object.values(s.anchorsByMap?.[selectedMapId!] || {}));
     };
-
     if (selectedMapId) sync();
     return beaconPositionService.subscribe(sync);
   }, [selectedMapId]);
 
-  /* ===== 定位结果 ===== */
+  /* ================= 定位结果 ================= */
   useEffect(() => {
     const sync = () => {
       const s = locateService.getState();
-      setLocPoints(
-        Object.values(s.resultsByMap?.[selectedMapId!] || {})
-      );
+      setLocPoints(Object.values(s.resultsByMap?.[selectedMapId!] || {}));
     };
-
     if (selectedMapId) sync();
     return locateService.subscribe(sync);
   }, [selectedMapId]);
 
+  /* ================= 目标 MAC 列表（实时） ================= */
+  const targetMacList = useMemo(() => {
+    const all = locateService.getState().resultsByMap || {};
+    const macSet = new Set<string>();
+    Object.values(all).forEach((m: any) =>
+      Object.keys(m || {}).forEach((mac) => macSet.add(mac))
+    );
+    return Array.from(macSet);
+  }, [locPoints]);
+
+  /* ================= 搜索目标并跳转地图 ================= */
+  const handleSearchTarget = () => {
+    if (!selectedTargetMac) return;
+
+    const all = locateService.getState().resultsByMap || {};
+    for (const mapId of Object.keys(all)) {
+      if (all[mapId]?.[selectedTargetMac]) {
+        setSelectedMapId(mapId);
+        return;
+      }
+    }
+  };
+
+  /* ================= 布局计算 ================= */
   const computeCoverLayout = () => {
     const img = mapImgRef.current;
     const wrap = mapWrapRef.current;
@@ -182,10 +207,11 @@ const LocationView: React.FC = () => {
           {showMac ? "隐藏 MAC" : "显示 MAC"}
         </Button>
 
+        {/* 地图选择 */}
         <Select
           value={selectedMapId}
           onChange={setSelectedMapId}
-          style={{ width: 240 }}
+          style={{ width: 220 }}
         >
           {mapList.map((m) => (
             <Option key={m.id} value={m.id}>
@@ -193,6 +219,25 @@ const LocationView: React.FC = () => {
             </Option>
           ))}
         </Select>
+
+        {/* 目标选择 + 搜索 */}
+        <Select
+          value={selectedTargetMac}
+          onChange={setSelectedTargetMac}
+          placeholder="选择目标 MAC"
+          allowClear
+          style={{ width: 220 }}
+        >
+          {targetMacList.map((mac) => (
+            <Option key={mac} value={mac}>
+              {mac}
+            </Option>
+          ))}
+        </Select>
+
+        <Button type="primary" onClick={handleSearchTarget}>
+          搜索
+        </Button>
       </Space>
 
       <Card size="small" styles={{ body: { padding: 0 } }}>
@@ -219,37 +264,70 @@ const LocationView: React.FC = () => {
           {anchors.map((a, i) => {
             const { px, py } = worldToScreen(a.x, a.y);
             return (
-              <div
-                key={i}
-                style={{
-                  position: "absolute",
-                  left: px,
-                  top: py,
-                  width: 14,
-                  height: 14,
-                  background: "red",
-                  borderRadius: "50%",
-                  transform: "translate(-50%, -50%)",
-                }}
-              />
+              <React.Fragment key={i}>
+                <div
+                  style={{
+                    position: "absolute",
+                    left: px,
+                    top: py,
+                    width: 14,
+                    height: 14,
+                    background: "red",
+                    borderRadius: "50%",
+                    transform: "translate(-50%, -50%)",
+                  }}
+                />
+                {showMac && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: px + 50,
+                      top: py - 15,
+                      fontSize: 12,
+                      background: "rgba(255,255,255,0.75)",
+                      padding: "1px 4px",
+                      borderRadius: 3,
+                    }}
+                  >
+                    {a.mac}
+                  </div>
+                )}
+              </React.Fragment>
             );
           })}
 
           {locPoints.map((p, i) => {
             const { px, py } = worldToScreen(p.x, p.y);
             return (
-              <div
-                key={i}
-                style={{
-                  position: "absolute",
-                  left: px,
-                  top: py,
-                  width: PREDICT_BOX_WIDTH,
-                  height: PREDICT_BOX_HEIGHT,
-                  border: "2px solid #0050ff",
-                  transform: "translate(-50%, -50%)",
-                }}
-              />
+              <React.Fragment key={i}>
+                <div
+                  style={{
+                    position: "absolute",
+                    left: px,
+                    top: py,
+                    width: PREDICT_BOX_WIDTH,
+                    height: PREDICT_BOX_HEIGHT,
+                    border: "2px solid #0050ff",
+                    background: "rgba(0,80,255,0.25)",
+                    transform: "translate(-50%, -50%)",
+                  }}
+                />
+                {showMac && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: px + 24,
+                      top: py - 16,
+                      fontSize: 12,
+                      background: "rgba(255,255,255,0.75)",
+                      padding: "1px 4px",
+                      borderRadius: 3,
+                    }}
+                  >
+                    {p.mac}
+                  </div>
+                )}
+              </React.Fragment>
             );
           })}
         </div>
