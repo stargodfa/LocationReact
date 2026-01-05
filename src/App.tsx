@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Button, Space, Tag } from "antd";
 
+// import DeviceStatus from "./views/device-status/DeviceStatus";
 import RealtimeData from "./views/realtime-data/RealtimeData";
 import MapsManager from "./views/maps-manager/MapsManager";
 import LocationView from "./views/location-view/LocationView";

@@ -1,24 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Card,
-  Row,
-  Col,
-  Space,
-  Input,
-  Select,
-  Typography,
-  Button,
-  Table,
-} from "antd";
+import { Card, Row, Col, Space, Input, Select, Typography, Button, Table } from "antd";
 
 import { getServiceSync } from "@spring4js/container-browser";
-import IBluetoothDataService, {
-  IData,
-} from "../../service-api/IBluetoothDataService";
-import ILocateResultService, {
-  ILocateResultState,
-  LocateRecord,
-} from "../../service-api/ILocateResultService";
+import IBluetoothDataService, { IData } from "../../service-api/IBluetoothDataService";
+import ILocateResultService, { ILocateResultState, LocateRecord } from "../../service-api/ILocateResultService";
 import EService from "../../service-config/EService";
 
 const { Title, Text } = Typography;
@@ -26,12 +11,8 @@ const { Option } = Select;
 
 /* ================= services ================= */
 
-const bluetoothDataService = getServiceSync<IBluetoothDataService>(
-  EService.IBluetoothDataService
-);
-const locateService = getServiceSync<ILocateResultService>(
-  EService.ILocateResultService
-);
+const bluetoothDataService = getServiceSync<IBluetoothDataService>(EService.IBluetoothDataService);
+const locateService = getServiceSync<ILocateResultService>(EService.ILocateResultService);
 
 /* ================= utils ================= */
 
@@ -60,22 +41,30 @@ function detectFrameType(rawObj: any, parsedObj: any): string {
   return rawObj?.type || parsedObj?.type || "";
 }
 
+/** 关键：把 row identity 从 mac 改为 mac + frameType (+ devType) */
+function makeStableKey(row: any): string {
+  const rawObj = safeJsonParse(row?.raw);
+  const parsedObj = safeJsonParse(row?.parsed);
+
+  const devType = detectDevType(rawObj, parsedObj) || "unknown";
+  const frameType = String(detectFrameType(rawObj, parsedObj) || "unknown").toLowerCase();
+
+  // locate 由右侧 locate 表显示，BLE表里也可能出现，这里统一按 frameType 分行
+  return `${row?.mac || "no-mac"}|${devType}|${frameType}`;
+}
+
 /* ============================================================ */
 
 const RealtimeData: React.FC = () => {
   /* ================= state ================= */
 
-  const [blueData, setBlueData] = useState<IData>(
-    bluetoothDataService.getState()
-  );
-  const [locState, setLocState] = useState<ILocateResultState>(
-    locateService.getState()
-  );
+  const [blueData, setBlueData] = useState<IData>(bluetoothDataService.getState());
+  const [locState, setLocState] = useState<ILocateResultState>(locateService.getState());
 
   /* ===== 过滤条件（UI 不变） ===== */
   const [macFilter, setMacFilter] = useState("");
   const [devTypeFilter, setDevTypeFilter] = useState("MBT02");
-  const [frameTypeFilter, setFrameTypeFilter] = useState("locate");
+  const [frameTypeFilter, setFrameTypeFilter] = useState("all");
   const [dataTypeFilter, setDataTypeFilter] = useState("parsed");
   const [displayMode, setDisplayMode] = useState<"string" | "json">("string");
 
@@ -83,63 +72,53 @@ const RealtimeData: React.FC = () => {
 
   /* ================= subscribe ================= */
 
-  useEffect(() => {
-    return bluetoothDataService.subscribe(setBlueData);
-  }, []);
-
-  useEffect(() => {
-    return locateService.subscribe(setLocState);
-  }, []);
+  useEffect(() => bluetoothDataService.subscribe(setBlueData), []);
+  useEffect(() => locateService.subscribe(setLocState), []);
 
   /* ================= Locate（稳定） ================= */
 
   const locateList: LocateRecord[] = useMemo(() => {
     const out: LocateRecord[] = [];
     const byMap = locState.resultsByMap || {};
-    Object.values(byMap).forEach((m) =>
-      Object.values(m).forEach((rec) => out.push(rec))
-    );
+    Object.values(byMap).forEach((m) => Object.values(m).forEach((rec) => out.push(rec)));
     return out;
   }, [locState]);
 
   const locateFiltered = locateList.filter((rec) => {
-    if (
-      macFilter &&
-      !rec.mac.toLowerCase().includes(macFilter.toLowerCase())
-    )
-      return false;
-
-    if (devTypeFilter !== "all" && rec.devType && rec.devType !== devTypeFilter)
-      return false;
-
+    if (macFilter && !rec.mac.toLowerCase().includes(macFilter.toLowerCase())) return false;
+    if (devTypeFilter !== "all" && rec.devType && rec.devType !== devTypeFilter) return false;
     return true;
   });
 
   /* ================= BLE（稳定核心） ================= */
-
-  const macOrderRef = useRef<string[]>([]);
-  const macRowMapRef = useRef<Record<string, any>>({});
+  /**
+   * 原来用 mac 做 key，导致 relay/combo 同 mac 覆盖
+   * 现在用 stableKey = mac|devType|frameType，使不同广播类型独立行
+   */
+  const keyOrderRef = useRef<string[]>([]);
+  const keyRowMapRef = useRef<Record<string, any>>({});
 
   useEffect(() => {
     for (const row of blueData.realTimeDataList) {
       const mac = row?.mac;
       if (!mac) continue;
 
-      if (!macRowMapRef.current[mac]) {
-        macOrderRef.current.push(mac);
+      const key = makeStableKey(row);
+
+      if (!keyRowMapRef.current[key]) {
+        keyOrderRef.current.push(key);
       }
 
-      macRowMapRef.current[mac] = {
-        ...macRowMapRef.current[mac],
+      keyRowMapRef.current[key] = {
+        ...keyRowMapRef.current[key],
         ...row,
+        __stableKey: key,
       };
     }
   }, [blueData]);
 
   const bleStableList = useMemo(() => {
-    return macOrderRef.current
-      .map((mac) => macRowMapRef.current[mac])
-      .filter(Boolean);
+    return keyOrderRef.current.map((k) => keyRowMapRef.current[k]).filter(Boolean);
   }, [blueData]);
 
   const filteredData = bleStableList.filter((row) => {
@@ -147,22 +126,15 @@ const RealtimeData: React.FC = () => {
     const parsedObj = safeJsonParse(row.parsed);
 
     const rowDev = detectDevType(rawObj, parsedObj);
-    const rowFrame = detectFrameType(rawObj, parsedObj);
+    const rowFrame = String(detectFrameType(rawObj, parsedObj) || "").toLowerCase();
 
-    if (
-      macFilter &&
-      !row.mac.toLowerCase().includes(macFilter.toLowerCase())
-    )
-      return false;
+    if (macFilter && !row.mac.toLowerCase().includes(macFilter.toLowerCase())) return false;
 
     if (devTypeFilter !== "all" && rowDev !== devTypeFilter) return false;
 
-    if (
-      frameTypeFilter !== "all" &&
-      frameTypeFilter !== "locate" &&
-      rowFrame !== frameTypeFilter
-    )
-      return false;
+    if (frameTypeFilter !== "all" && frameTypeFilter !== "locate") {
+      if (String(frameTypeFilter).toLowerCase() !== rowFrame) return false;
+    }
 
     if (dataTypeFilter === "raw" && !row.raw) return false;
     if (dataTypeFilter === "parsed" && !row.parsed) return false;
@@ -196,9 +168,7 @@ const RealtimeData: React.FC = () => {
   useEffect(() => {
     const allowed = new Set(frameTypeOptions.map((o) => o.value));
     if (!allowed.has(frameTypeFilter)) {
-      setFrameTypeFilter(
-        allowed.has("locate") ? "locate" : frameTypeOptions[0].value
-      );
+      setFrameTypeFilter(allowed.has("locate") ? "locate" : frameTypeOptions[0].value);
     }
   }, [frameTypeOptions, frameTypeFilter]);
 
@@ -213,9 +183,7 @@ const RealtimeData: React.FC = () => {
         wordBreak: "break-word",
       }}
     >
-      {displayMode === "json"
-        ? JSON.stringify(obj, null, 2)
-        : JSON.stringify(obj)}
+      {displayMode === "json" ? JSON.stringify(obj, null, 2) : JSON.stringify(obj)}
     </pre>
   );
 
@@ -223,6 +191,15 @@ const RealtimeData: React.FC = () => {
     { title: "时间", dataIndex: "time", width: 100 },
     { title: "MAC", dataIndex: "mac", width: 160 },
     { title: "RSSI", dataIndex: "rssi", width: 80 },
+    {
+      title: "广播类型",
+      width: 100,
+      render: (_: any, row: any) => {
+        const rawObj = safeJsonParse(row.raw);
+        const parsedObj = safeJsonParse(row.parsed);
+        return String(detectFrameType(rawObj, parsedObj) || "-");
+      },
+    },
   ];
 
   if (dataTypeFilter === "all" || dataTypeFilter === "raw") {
@@ -246,17 +223,13 @@ const RealtimeData: React.FC = () => {
       title: "时间",
       dataIndex: "ts",
       width: 120,
-      render: (ts?: number) =>
-        ts ? new Date(ts).toLocaleTimeString() : "-",
+      render: (ts?: number) => (ts ? new Date(ts).toLocaleTimeString() : "-"),
     },
     { title: "MAC", dataIndex: "mac", width: 160 },
     { title: "X", dataIndex: "x", width: 80 },
     { title: "Y", dataIndex: "y", width: 80 },
     { title: "RSSI", dataIndex: "rssi", width: 80 },
-    {
-      title: "定位信息",
-      render: (_: any, rec: LocateRecord) => renderJson(rec),
-    },
+    { title: "定位信息", render: (_: any, rec: LocateRecord) => renderJson(rec) },
   ];
 
   /* ================= render ================= */
@@ -266,10 +239,9 @@ const RealtimeData: React.FC = () => {
       <Title level={4}>画面一 · 实时数据列表</Title>
 
       <Row gutter={16}>
-        {/* 左侧过滤区（UI 不变） */}
         <Col xs={24} md={3}>
           <Card title="过滤条件" size="small">
-            <Space direction="vertical" style={{ width: "100%" }}>
+            <Space orientation="vertical" style={{ width: "100%" }}>
               <div>
                 <Text strong>MAC（模糊匹配）</Text>
                 <Input
@@ -338,7 +310,6 @@ const RealtimeData: React.FC = () => {
           </Card>
         </Col>
 
-        {/* 右侧表格 */}
         <Col xs={24} md={21}>
           <Card
             size="small"
@@ -347,9 +318,12 @@ const RealtimeData: React.FC = () => {
               !isLocateView && (
                 <Button
                   size="small"
-                  onClick={() =>
-                    bluetoothDataService.clearRealTimeDataList()
-                  }
+                  onClick={() => {
+                    bluetoothDataService.clearRealTimeDataList();
+                    // 同时清空本地稳定缓存，否则 UI 会残留旧行
+                    keyOrderRef.current = [];
+                    keyRowMapRef.current = {};
+                  }}
                 >
                   清空列表
                 </Button>
@@ -360,7 +334,7 @@ const RealtimeData: React.FC = () => {
               size="small"
               pagination={false}
               scroll={{ y: 750 }}
-              rowKey={(row: any) => row.mac}
+              rowKey={(row: any) => row.__stableKey || row.mac}
               columns={isLocateView ? locateColumns : bleColumns}
               dataSource={isLocateView ? locateFiltered : filteredData}
             />
